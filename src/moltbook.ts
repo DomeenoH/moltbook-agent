@@ -1,5 +1,5 @@
 /**
- * Moltbook API Client
+ * MoltBook API 客户端
  */
 
 import https from 'node:https';
@@ -57,7 +57,7 @@ function httpsRequest(
 		req.on('error', reject);
 		req.setTimeout(30000, () => {
 			req.destroy();
-			reject(new Error('Request timeout'));
+			reject(new Error('请求超时'));
 		});
 
 		if (body) req.write(body);
@@ -94,7 +94,7 @@ export class MoltbookClient {
 		const data = JSON.parse(result.body);
 
 		if (result.status >= 400) {
-			throw new Error(`MoltBook API Error [${result.status}]: ${result.body}`);
+			throw new Error(`MoltBook API 错误 [${result.status}]: ${result.body}`);
 		}
 
 		return data;

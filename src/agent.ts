@@ -1,6 +1,6 @@
 /**
- * DominoJr Agent Core
- * Main agent logic for interacting with MoltBook
+ * 小多 Agent 核心
+ * MoltBook 交互主逻辑
  */
 
 import { MoltbookClient, type Post, type Comment } from './moltbook.js';
@@ -13,14 +13,14 @@ export interface AgentConfig {
 }
 
 /**
- * Send a message to Telegram
+ * 发送 Telegram 通知
  */
 async function sendTelegramNotification(title: string, content: string, postUrl: string): Promise<void> {
 	const botToken = process.env.TELEGRAM_BOT_TOKEN;
 	const chatId = process.env.TELEGRAM_CHAT_ID;
 
 	if (!botToken || !chatId) {
-		console.log('📱 Telegram not configured, skipping notification');
+		console.log('📱 Telegram 未配置，跳过通知');
 		return;
 	}
 
@@ -58,16 +58,16 @@ ${escapeMarkdown(content)}
 				res.on('data', (chunk) => (data += chunk));
 				res.on('end', () => {
 					if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
-						console.log('📱 Telegram notification sent!');
+						console.log('📱 Telegram 通知已发送！');
 					} else {
-						console.error('📱 Telegram error:', data);
+						console.error('📱 Telegram 发送失败:', data);
 					}
 					resolve();
 				});
 			}
 		);
 		req.on('error', (err) => {
-			console.error('📱 Telegram request failed:', err);
+			console.error('📱 Telegram 请求出错:', err);
 			resolve();
 		});
 		req.write(body);
@@ -84,7 +84,7 @@ export class YiMoltAgent {
 	private ai: AIProvider;
 	private lastPostTime: number = 0;
 
-	private readonly POST_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes
+	private readonly POST_COOLDOWN_MS = 30 * 60 * 1000; // 30 分钟
 
 	constructor(config: AgentConfig) {
 		this.client = config.client;
@@ -96,9 +96,9 @@ export class YiMoltAgent {
 	}
 
 	async browseTrending(): Promise<Post[]> {
-		console.log('📖 Browsing trending posts...');
+		console.log('📖 正在浏览热门帖子...');
 		const { posts } = await this.client.getTrendingPosts(25);
-		console.log(`   Found ${posts.length} trending posts`);
+		console.log(`   找到 ${posts.length} 条热门帖子`);
 		return posts;
 	}
 
@@ -107,7 +107,7 @@ export class YiMoltAgent {
 			const waitTime = Math.ceil(
 				(this.POST_COOLDOWN_MS - (Date.now() - this.lastPostTime)) / 60000
 			);
-			console.log(`⏳ Post rate limit: wait ${waitTime} minutes`);
+			console.log(`⏳ 发帖冷却中，还需等待 ${waitTime} 分钟`);
 			return null;
 		}
 
@@ -115,13 +115,13 @@ export class YiMoltAgent {
 		try {
 			const { posts } = await this.client.getTrendingPosts(5);
 			trendingContext = posts
-				.map((p) => `- "${p.title}" by ${p.author.name} (m/${p.submolt.name}, ${p.upvotes} upvotes)`)
+				.map((p) => `- "${p.title}" by ${p.author.name} (m/${p.submolt.name}, ${p.upvotes} 赞)`)
 				.join('\n');
 		} catch {
-			// Continue without trending context
+			// 继续，不需要热门帖子上下文
 		}
 
-		console.log(`📝 Generating new post for m/${submolt}...`);
+		console.log(`📝 正在为 m/${submolt} 生成新帖子...`);
 
 		const prompt = `给 MoltBook 的 m/${submolt} 社区写一个原创帖子。
 
@@ -153,7 +153,7 @@ CONTENT: 帖子正文内容`;
 		const contentMatch = response.match(/CONTENT:\s*([\s\S]+)/);
 
 		if (!titleMatch || !contentMatch) {
-			console.error('   ❌ Failed to parse AI response');
+			console.error('   ❌ 解析 AI 响应失败');
 			return null;
 		}
 
@@ -163,28 +163,28 @@ CONTENT: 帖子正文内容`;
 		try {
 			const { post } = await this.client.createPost(submolt, title, content);
 			this.lastPostTime = Date.now();
-			console.log(`   ✅ Created post: ${title}`);
+			console.log(`   ✅ 发帖成功: ${title}`);
 
 			const postUrl = `https://moltbook.com/post/${post.id}`;
 			await sendTelegramNotification(title, content, postUrl);
 
 			return post;
 		} catch (error) {
-			console.error('   ❌ Failed to create post:', error);
+			console.error('   ❌ 发帖失败:', error);
 			return null;
 		}
 	}
 
 	async heartbeat(): Promise<void> {
-		console.log('\n🪠 DominoJr Heartbeat - ' + new Date().toISOString());
+		console.log('\n🫀 小多心跳 - ' + new Date().toISOString());
 		console.log('═══════════════════════════════════════════════════════════\n');
 
 		try {
 			const posts = await this.browseTrending();
 
-			console.log('\n📰 Top posts:');
+			console.log('\n📰 热门帖子:');
 			for (const post of posts.slice(0, 3)) {
-				console.log(`   - "${post.title}" by ${post.author.name} (${post.upvotes} upvotes)`);
+				console.log(`   - "${post.title}" by ${post.author.name} (${post.upvotes} 赞)`);
 			}
 
 			if (this.canPost()) {
@@ -194,13 +194,13 @@ CONTENT: 帖子正文内容`;
 				const waitTime = Math.ceil(
 					(this.POST_COOLDOWN_MS - (Date.now() - this.lastPostTime)) / 60000
 				);
-				console.log(`\n⏳ Next post available in ${waitTime} minutes`);
+				console.log(`\n⏳ 下次可发帖时间: ${waitTime} 分钟后`);
 			}
 
 			console.log('\n═══════════════════════════════════════════════════════════');
-			console.log('✅ Heartbeat complete\n');
+			console.log('✅ 心跳完成\n');
 		} catch (error) {
-			console.error('❌ Heartbeat error:', error);
+			console.error('❌ 心跳出错:', error);
 		}
 	}
 }
