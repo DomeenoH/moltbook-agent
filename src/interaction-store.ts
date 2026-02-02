@@ -23,6 +23,7 @@ export interface PostSnapshot {
 export interface InteractionData {
   repliedCommentIds: string[];      // 已回复的评论 ID
   postSnapshots: PostSnapshot[];    // 帖子状态快照
+  spamUsernames: string[];          // 标记为 spam 的用户名
 }
 
 /**
@@ -61,6 +62,10 @@ export class InteractionStore {
         Array.isArray(parsed.repliedCommentIds) &&
         Array.isArray(parsed.postSnapshots)
       ) {
+        // 兼容旧数据：如果没有 spamUsernames 字段，添加空数组
+        if (!Array.isArray(parsed.spamUsernames)) {
+          parsed.spamUsernames = [];
+        }
         return parsed as InteractionData;
       }
 
@@ -78,6 +83,7 @@ export class InteractionStore {
     return {
       repliedCommentIds: [],
       postSnapshots: [],
+      spamUsernames: [],
     };
   }
 
@@ -172,5 +178,33 @@ export class InteractionStore {
       return currentUpvotes > 0 || currentDownvotes > 0;
     }
     return currentUpvotes !== snapshot.upvotes || currentDownvotes !== snapshot.downvotes;
+  }
+
+  /**
+   * 检查用户是否被标记为 spam
+   * @param username 用户名
+   * @returns 是否为 spam 用户
+   */
+  isSpamUser(username: string): boolean {
+    return this.data.spamUsernames.includes(username);
+  }
+
+  /**
+   * 标记用户为 spam
+   * @param username 用户名
+   */
+  markAsSpam(username: string): void {
+    if (!this.data.spamUsernames.includes(username)) {
+      this.data.spamUsernames.push(username);
+      this.saveData();
+    }
+  }
+
+  /**
+   * 获取所有 spam 用户列表
+   * @returns spam 用户名数组
+   */
+  getSpamUsers(): string[] {
+    return [...this.data.spamUsernames];
   }
 }

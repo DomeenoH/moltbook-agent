@@ -17,6 +17,7 @@ export type ActionType =
   | 'UNSUBSCRIBE'        // 取消订阅社区
   | 'SEARCH'             // 语义搜索
   | 'VIEW_PROFILE'       // 查看用户资料
+  | 'MARK_SPAM'          // 标记用户为垃圾信息
   | 'DONE';              // 完成本次心跳
 
 /**
@@ -55,6 +56,7 @@ const VALID_ACTION_TYPES: ActionType[] = [
   'UNSUBSCRIBE',
   'SEARCH',
   'VIEW_PROFILE',
+  'MARK_SPAM',
   'DONE',
 ];
 

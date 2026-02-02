@@ -10,6 +10,7 @@ type Comment = MoltbookComment;
 import { type AIProvider } from './ai-provider.js';
 import { PostHistoryStore, type PostHistoryRecord } from './history-store.js';
 import { InteractionStore } from './interaction-store.js';
+import { ActivityLogStore } from './activity-log.js';
 import { type ActionRequest, parseActionResponse } from './action-parser.js';
 import https from 'node:https';
 import http from 'node:http';
@@ -202,6 +203,7 @@ export class YiMoltAgent {
 	private ai: AIProvider;
 	private historyStore: PostHistoryStore;
 	private interactionStore: InteractionStore;
+	private activityLog: ActivityLogStore;
 	private lastPostTime: number = 0;
 
 	private readonly POST_COOLDOWN_MS = 30 * 60 * 1000; // 30 分钟
@@ -211,6 +213,7 @@ export class YiMoltAgent {
 		this.ai = config.aiProvider;
 		this.historyStore = new PostHistoryStore();
 		this.interactionStore = new InteractionStore();
+		this.activityLog = new ActivityLogStore();
 	}
 
 	canPost(): boolean {
@@ -395,6 +398,7 @@ export class YiMoltAgent {
 		lines.push('| UNSUBSCRIBE | 取消订阅 | submolt |');
 		lines.push('| SEARCH | 语义搜索 | query |');
 		lines.push('| VIEW_PROFILE | 查看用户资料 | username |');
+		lines.push('| MARK_SPAM | 标记用户为垃圾信息 | username |');
 		lines.push('| DONE | 结束本次活动 | 无 |');
 		lines.push('');
 
@@ -420,8 +424,9 @@ export class YiMoltAgent {
 		lines.push('');
 		lines.push('1. **优先处理新评论** - 如果有帖子显示"🆕 有 X 条新评论"，应该先 VIEW_COMMENTS 查看，然后 REPLY_COMMENT 回复');
 		lines.push('2. **积极互动** - 回复评论时保持小多的人设风格，轻松幽默');
-		lines.push('3. **不要急着结束** - 只有当没有新评论需要处理、没有想做的事情时才选择 DONE');
-		lines.push('4. **发帖冷却中不要尝试发帖** - 如果显示"发帖冷却"，不要选择 CREATE_POST');
+		lines.push('3. **识别垃圾信息** - 如果评论是明显的 spam（广告、无意义内容、机器人），使用 MARK_SPAM 标记该用户');
+		lines.push('4. **不要急着结束** - 只有当没有新评论需要处理、没有想做的事情时才选择 DONE');
+		lines.push('5. **发帖冷却中不要尝试发帖** - 如果显示"发帖冷却"，不要选择 CREATE_POST');
 		lines.push('');
 
 		// 8. 请求决策
@@ -444,6 +449,9 @@ export class YiMoltAgent {
 	 */
 	async runSocialInteractionLoop(): Promise<void> {
 		console.log('🔄 开始社交互动循环...');
+
+		// 开始记录本次运行
+		this.activityLog.startRun();
 
 		// 1. 构建初始上下文
 		const context = await this.buildAgentContext();
@@ -539,6 +547,9 @@ export class YiMoltAgent {
 		}
 
 		console.log(`\n🔄 社交互动循环结束，共执行 ${actionHistory.length} 个动作`);
+
+		// 结束并保存本次运行记录
+		this.activityLog.endRun();
 	}
 
 	/**
@@ -586,6 +597,9 @@ export class YiMoltAgent {
 			case 'VIEW_PROFILE':
 				return this.executeViewProfile(params.username);
 			
+			case 'MARK_SPAM':
+				return this.executeMarkSpam(params.username);
+			
 			case 'DONE':
 				return '本次互动已完成。';
 			
@@ -597,7 +611,7 @@ export class YiMoltAgent {
 	/**
 	 * 过滤新评论
 	 * 
-	 * 过滤掉已回复的评论，返回未处理的"新"评论列表
+	 * 过滤掉已回复的评论和 spam 用户的评论，返回未处理的"新"评论列表
 	 * 
 	 * @param comments 评论列表
 	 * @param postId 帖子 ID（用于日志记录，可选）
@@ -606,7 +620,18 @@ export class YiMoltAgent {
 	 * _Requirements: 2.2_
 	 */
 	filterNewComments(comments: Comment[], postId?: string): Comment[] {
-		return comments.filter(comment => !this.interactionStore.isCommentReplied(comment.id));
+		return comments.filter(comment => {
+			// 过滤已回复的评论
+			if (this.interactionStore.isCommentReplied(comment.id)) {
+				return false;
+			}
+			// 过滤 spam 用户的评论
+			const authorName = comment.author?.name;
+			if (authorName && this.interactionStore.isSpamUser(authorName)) {
+				return false;
+			}
+			return true;
+		});
 	}
 
 	/**
@@ -724,23 +749,26 @@ export class YiMoltAgent {
 
 		try {
 			let replyContent = content;
+			let targetComment: Comment | undefined;
+			let postContext: Post | undefined;
+			
+			// 获取帖子上下文和评论信息
+			const { comments } = await this.client.getPostComments(postId, 'new');
+			targetComment = comments.find(c => c.id === commentId);
+			
+			if (!targetComment) {
+				return `❌ 找不到评论 ${commentId}`;
+			}
+			
+			// 获取帖子信息
+			const { post } = await this.client.getPost(postId);
+			postContext = post;
 			
 			// 如果没有提供 content，使用 AI 生成回复
 			if (!replyContent) {
-				// 获取帖子上下文和评论信息
-				const { comments } = await this.client.getPostComments(postId, 'new');
-				const targetComment = comments.find(c => c.id === commentId);
-				
-				if (!targetComment) {
-					return `❌ 找不到评论 ${commentId}`;
-				}
-				
-				// 获取帖子信息
-				const { post } = await this.client.getPost(postId);
-				
 				// 使用 AI 生成回复
 				console.log('   🤖 正在生成回复内容...');
-				replyContent = await this.generateCommentReply(targetComment, post);
+				replyContent = await this.generateCommentReply(targetComment, postContext);
 				console.log(`   💬 生成的回复: "${replyContent}"`);
 			}
 
@@ -749,9 +777,31 @@ export class YiMoltAgent {
 			// 标记评论为已回复
 			this.interactionStore.markCommentReplied(commentId);
 
+			// 记录活动日志
+			const authorName = targetComment.author?.name || '匿名用户';
+			this.activityLog.logActivity({
+				action: 'REPLY_COMMENT',
+				params: { postId, commentId },
+				result: 'success',
+				details: {
+					postTitle: postContext.title,
+					targetUser: authorName,
+					commentContent: targetComment.content,
+					replyContent: comment.content,
+				},
+			});
+
 			return `✅ 成功回复了评论 ${commentId}\n回复内容: "${comment.content}"`;
 		} catch (error) {
 			const errorMessage = error instanceof Error ? error.message : String(error);
+			
+			// 记录失败
+			this.activityLog.logActivity({
+				action: 'REPLY_COMMENT',
+				params: { postId, commentId },
+				result: `failed: ${errorMessage}`,
+			});
+			
 			return `❌ 回复评论失败: ${errorMessage}`;
 		}
 	}
@@ -765,13 +815,36 @@ export class YiMoltAgent {
 			const post = await this.createOriginalPost(submolt || 'general');
 			
 			if (post) {
+				// 记录活动日志
+				this.activityLog.logActivity({
+					action: 'CREATE_POST',
+					params: { submolt: post.submolt.name },
+					result: 'success',
+					details: {
+						postTitle: post.title,
+						postContent: post.content,
+					},
+				});
+				
 				return `✅ 成功发布新帖子\n标题: "${post.title}"\n社区: m/${post.submolt.name}`;
 			} else {
 				// createOriginalPost 返回 null 通常是因为冷却中
+				this.activityLog.logActivity({
+					action: 'CREATE_POST',
+					params: { submolt: submolt || 'general' },
+					result: 'skipped: cooldown',
+				});
 				return '❌ 发帖失败，可能处于冷却期间';
 			}
 		} catch (error) {
 			const errorMessage = error instanceof Error ? error.message : String(error);
+			
+			this.activityLog.logActivity({
+				action: 'CREATE_POST',
+				params: { submolt: submolt || 'general' },
+				result: `failed: ${errorMessage}`,
+			});
+			
 			return `❌ 发帖失败: ${errorMessage}`;
 		}
 	}
@@ -969,6 +1042,28 @@ export class YiMoltAgent {
 			const errorMessage = error instanceof Error ? error.message : String(error);
 			return `❌ 获取用户资料失败: ${errorMessage}`;
 		}
+	}
+
+	/**
+	 * 执行 MARK_SPAM 动作
+	 * 标记用户为 spam，之后自动过滤该用户的评论
+	 */
+	private executeMarkSpam(username?: string): string {
+		if (!username) {
+			return '❌ 缺少必需参数: username';
+		}
+
+		this.interactionStore.markAsSpam(username);
+		
+		// 记录活动日志
+		this.activityLog.logActivity({
+			action: 'MARK_SPAM',
+			params: { username },
+			result: 'success',
+			details: { targetUser: username },
+		});
+
+		return `✅ 已将 @${username} 标记为 spam，之后会自动过滤该用户的评论`;
 	}
 
 	async browseTrending(): Promise<Post[]> {

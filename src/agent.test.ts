@@ -64,13 +64,22 @@ describe('YiMoltAgent', () => {
 		 */
 
 		// 创建一个带有 mock interactionStore 的 agent
-		function createAgentWithInteractionStore(repliedCommentIds: string[]): YiMoltAgent {
+		function createAgentWithInteractionStore(repliedCommentIds: string[], spamUsernames: string[] = []): YiMoltAgent {
 			const agent = Object.create(YiMoltAgent.prototype);
 			
 			// Mock interactionStore
 			agent.interactionStore = {
 				isCommentReplied: (commentId: string) => repliedCommentIds.includes(commentId),
 				markCommentReplied: () => {},
+				isSpamUser: (username: string) => spamUsernames.includes(username),
+				markAsSpam: () => {},
+			};
+			
+			// Mock activityLog
+			agent.activityLog = {
+				startRun: () => 'test-run',
+				logActivity: () => {},
+				endRun: () => {},
 			};
 			
 			return agent;
@@ -162,6 +171,34 @@ describe('YiMoltAgent', () => {
 			
 			expect(result).toHaveLength(1);
 			expect(result[0].id).toBe('c2');
+		});
+
+		it('过滤掉 spam 用户的评论', () => {
+			const agent = createAgentWithInteractionStore([], ['SpamBot']);
+			const comments = [
+				createMockComment('c1', '正常评论'),
+				{ ...createMockComment('c2', 'spam 内容'), author: { id: 'spam-1', name: 'SpamBot', karma: 0, posts_count: 0, created_at: '2024-01-01' } } as MoltbookComment,
+				createMockComment('c3', '另一条正常评论'),
+			];
+			
+			const result = agent.filterNewComments(comments, 'post-123');
+			
+			expect(result).toHaveLength(2);
+			expect(result.map(c => c.id)).toEqual(['c1', 'c3']);
+		});
+
+		it('同时过滤已回复和 spam 用户的评论', () => {
+			const agent = createAgentWithInteractionStore(['c1'], ['SpamBot']);
+			const comments = [
+				createMockComment('c1', '已回复的评论'),
+				{ ...createMockComment('c2', 'spam 内容'), author: { id: 'spam-1', name: 'SpamBot', karma: 0, posts_count: 0, created_at: '2024-01-01' } } as MoltbookComment,
+				createMockComment('c3', '正常评论'),
+			];
+			
+			const result = agent.filterNewComments(comments, 'post-123');
+			
+			expect(result).toHaveLength(1);
+			expect(result[0].id).toBe('c3');
 		});
 	});
 
@@ -519,6 +556,15 @@ describe('YiMoltAgent', () => {
 			agent.interactionStore = {
 				isCommentReplied: () => false,
 				markCommentReplied: () => {},
+				isSpamUser: () => false,
+				markAsSpam: () => {},
+			};
+			
+			// Mock activityLog
+			agent.activityLog = {
+				startRun: () => 'test-run',
+				logActivity: () => {},
+				endRun: () => {},
 			};
 			
 			// Mock createOriginalPost for CREATE_POST action
@@ -585,6 +631,19 @@ describe('YiMoltAgent', () => {
 
 			it('成功回复时返回成功信息', async () => {
 				const agent = createAgentWithMocks({
+					getPostComments: async () => ({
+						comments: [
+							{ id: 'c1', content: '原始评论', author: { name: 'User1' } },
+						],
+					}),
+					getPost: async () => ({
+						post: {
+							id: 'p1',
+							title: '测试帖子',
+							content: '帖子内容',
+							submolt: { name: 'general' },
+						},
+					}),
 					replyToComment: async () => ({ comment: { id: 'new-c', content: '测试回复内容' } }),
 				});
 				const result = await agent.executeAction({ 
@@ -649,6 +708,19 @@ describe('YiMoltAgent', () => {
 
 			it('API 错误时返回错误信息', async () => {
 				const agent = createAgentWithMocks({
+					getPostComments: async () => ({
+						comments: [
+							{ id: 'c1', content: '原始评论', author: { name: 'User1' } },
+						],
+					}),
+					getPost: async () => ({
+						post: {
+							id: 'p1',
+							title: '测试帖子',
+							content: '帖子内容',
+							submolt: { name: 'general' },
+						},
+					}),
 					replyToComment: async () => { throw new Error('回复失败'); },
 				});
 				const result = await agent.executeAction({ 
