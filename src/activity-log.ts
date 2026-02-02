@@ -114,10 +114,10 @@ export class ActivityLogStore {
   endRun(): void {
     if (this.currentRun) {
       this.currentRun.endTime = new Date().toISOString();
-      // 只保留最近 50 次运行记录
+      // 保留最近 200 次运行记录
       this.data.runs.push(this.currentRun);
-      if (this.data.runs.length > 50) {
-        this.data.runs = this.data.runs.slice(-50);
+      if (this.data.runs.length > 200) {
+        this.data.runs = this.data.runs.slice(-200);
       }
       this.saveData();
       this.currentRun = null;
@@ -133,16 +133,16 @@ export class ActivityLogStore {
 
   /**
    * 生成人类可读的 Markdown 日志
-   * 保存到 data/heartbeat-log.md
+   * 保存到 data/heartbeat-log.md，保留最近 50 次运行记录
    */
   generateReadableLog(): void {
     const logPath = path.join('data', 'heartbeat-log.md');
-    const runs = [...this.data.runs].slice(-10); // 最近 10 次运行
+    const runs = [...this.data.runs].slice(-50); // 最近 50 次运行
     
     const lines: string[] = [];
     lines.push('# 🐙 小多心跳日志');
     lines.push('');
-    lines.push('> 最近 10 次运行记录（自动生成，请勿手动编辑）');
+    lines.push('> 最近 50 次运行记录（自动生成，请勿手动编辑）');
     lines.push('');
     
     // 倒序显示，最新的在前面
