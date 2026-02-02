@@ -440,6 +440,12 @@ export class YiMoltAgent {
 			// 2.1 格式化上下文为 prompt
 			const prompt = this.formatContextPrompt(context, actionHistory);
 
+			// 调试：打印发送给 AI 的 prompt
+			console.log('\n   📝 发送给 AI 的 prompt:');
+			console.log('   ─────────────────────────────────────');
+			console.log(prompt.split('\n').map(line => `   ${line}`).join('\n'));
+			console.log('   ─────────────────────────────────────\n');
+
 			// 2.2 发送 prompt 给 AI 并获取响应
 			console.log('   🤖 正在请求 AI 决策...');
 			let aiResponse: string;
@@ -450,6 +456,12 @@ export class YiMoltAgent {
 				// AI 请求失败，终止循环
 				break;
 			}
+
+			// 调试：打印 AI 的原始响应
+			console.log('\n   🤖 AI 原始响应:');
+			console.log('   ─────────────────────────────────────');
+			console.log(aiResponse.split('\n').map(line => `   ${line}`).join('\n'));
+			console.log('   ─────────────────────────────────────\n');
 
 			// 2.3 解析 AI 响应为 ActionRequest
 			const actionRequest = parseActionResponse(aiResponse);
