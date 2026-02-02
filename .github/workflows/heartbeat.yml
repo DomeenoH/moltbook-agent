@@ -58,7 +58,7 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add data/
+          git add data/ README.md
           git diff --staged --quiet || git commit -m "chore: 更新交互状态 [skip ci]"
           # 推送前先 pull，防止与其他提交冲突
           git pull --rebase origin main || true

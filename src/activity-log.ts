@@ -134,6 +134,7 @@ export class ActivityLogStore {
   /**
    * 生成人类可读的 Markdown 日志
    * 保存到 data/heartbeat-log.md，保留最近 50 次运行记录
+   * 同时更新 README.md 中的日志部分
    */
   generateReadableLog(): void {
     const logPath = path.join('data', 'heartbeat-log.md');
@@ -146,7 +147,8 @@ export class ActivityLogStore {
     lines.push('');
     
     // 倒序显示，最新的在前面
-    for (const run of runs.reverse()) {
+    const reversedRuns = [...runs].reverse();
+    for (const run of reversedRuns) {
       const startDate = new Date(run.startTime);
       const dateStr = this.formatDate(startDate);
       
@@ -180,6 +182,63 @@ export class ActivityLogStore {
       fs.writeFileSync(logPath, lines.join('\n'), 'utf-8');
     } catch (error) {
       console.error('生成可读日志失败:', error);
+    }
+
+    // 同时更新 README.md
+    this.updateReadme(reversedRuns.slice(0, 10)); // README 只显示最近 10 次
+  }
+
+  /**
+   * 更新 README.md 中的心跳日志部分
+   */
+  private updateReadme(recentRuns: RunLog[]): void {
+    const readmePath = 'README.md';
+    
+    try {
+      if (!fs.existsSync(readmePath)) {
+        return;
+      }
+      
+      let readme = fs.readFileSync(readmePath, 'utf-8');
+      
+      // 生成日志内容
+      const logLines: string[] = [];
+      
+      for (const run of recentRuns) {
+        const startDate = new Date(run.startTime);
+        const dateStr = this.formatDate(startDate);
+        
+        logLines.push(`### 📅 ${dateStr}`);
+        logLines.push('');
+        
+        if (run.activities.length === 0) {
+          logLines.push('*本次运行没有执行任何操作*');
+          logLines.push('');
+          continue;
+        }
+        
+        for (const activity of run.activities) {
+          const icon = this.getActivityIcon(activity.action);
+          const summary = this.formatActivitySummary(activity);
+          logLines.push(`${icon} ${summary}`);
+          logLines.push('');
+        }
+      }
+      
+      // 替换 README 中的日志部分
+      const startMarker = '<!-- HEARTBEAT_LOG_START -->';
+      const endMarker = '<!-- HEARTBEAT_LOG_END -->';
+      
+      const startIdx = readme.indexOf(startMarker);
+      const endIdx = readme.indexOf(endMarker);
+      
+      if (startIdx !== -1 && endIdx !== -1) {
+        const newContent = `${startMarker}\n<!-- 此部分由 GitHub Actions 自动更新，请勿手动编辑 -->\n\n${logLines.join('\n')}\n${endMarker}`;
+        readme = readme.substring(0, startIdx) + newContent + readme.substring(endIdx + endMarker.length);
+        fs.writeFileSync(readmePath, readme, 'utf-8');
+      }
+    } catch (error) {
+      console.error('更新 README 失败:', error);
     }
   }
 
