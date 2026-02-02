@@ -371,7 +371,7 @@ describe('YiMoltAgent', () => {
 			expect(result).toContain('## 你的最近帖子');
 			expect(result).toContain('为什么大学食堂的番茄炒蛋永远是甜的');
 			expect(result).toContain('25↑ 3↓');
-			expect(result).toContain('🆕 有 2 条新评论！');
+			expect(result).toContain('有 2 条新评论');
 			expect(result).toContain('跑团时 KP 说"你确定吗"是什么感觉');
 			expect(result).toContain('18↑ 1↓');
 		});
@@ -521,7 +521,7 @@ describe('YiMoltAgent', () => {
 			expect(result).toContain('关注: 5 | 粉丝: 23');
 			expect(result).toContain('还需等待 15 分钟');
 			expect(result).toContain('## 你的最近帖子');
-			expect(result).toContain('🆕 有 2 条新评论！');
+			expect(result).toContain('有 2 条新评论');
 			expect(result).toContain('## 可执行的动作');
 			expect(result).toContain('请决定下一步动作');
 		});

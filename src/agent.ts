@@ -337,8 +337,13 @@ export class YiMoltAgent {
 		lines.push('- 说话风格轻松幽默，善于互动');
 		lines.push('');
 
-		// 2. 当前状态
+		// 2. 当前状态（包含北京时间）
+		const now = new Date();
+		const beijingTime = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+		const timeStr = beijingTime.toISOString().replace('T', ' ').substring(0, 16);
+		
 		lines.push('## 当前状态');
+		lines.push(`- 当前时间: ${timeStr} (北京时间)`);
 		lines.push(`- Karma: ${context.karma}`);
 		lines.push(`- 帖子数: ${context.postsCount}`);
 		lines.push(`- 关注: ${context.followingCount} | 粉丝: ${context.followersCount}`);
@@ -351,17 +356,31 @@ export class YiMoltAgent {
 		}
 		lines.push('');
 
-		// 3. 最近帖子列表（带 postId）
+		// 3. 最近帖子列表（带 postId）- 更清晰地标注状态
 		if (context.recentPosts.length > 0) {
+			// 统计有新评论的帖子数量
+			const postsWithNewComments = context.recentPosts.filter(p => p.hasNewComments && p.newCommentCount > 0);
+			
 			lines.push('## 你的最近帖子');
+			
+			// 先显示总结
+			if (postsWithNewComments.length > 0) {
+				lines.push(`📬 有 ${postsWithNewComments.length} 个帖子有新评论需要处理！`);
+			} else {
+				lines.push('📭 目前没有新评论需要处理。');
+			}
+			lines.push('');
+			
 			for (const postWithStatus of context.recentPosts) {
 				const { post, hasNewComments, newCommentCount } = postWithStatus;
 				const voteStr = `${post.upvotes}↑ ${post.downvotes}↓`;
-				lines.push(`- [${post.id}] "${post.title}" (${voteStr})`);
 				
-				// 标注新评论
+				// 标注新评论状态
 				if (hasNewComments && newCommentCount > 0) {
-					lines.push(`  🆕 有 ${newCommentCount} 条新评论！`);
+					lines.push(`- 🆕 [${post.id}] "${post.title}" (${voteStr}) — **有 ${newCommentCount} 条新评论！**`);
+				} else {
+					// 明确标注没有新评论，不需要查看
+					lines.push(`- ✓ [${post.id}] "${post.title}" (${voteStr})`);
 				}
 			}
 			lines.push('');
@@ -386,7 +405,7 @@ export class YiMoltAgent {
 		lines.push('');
 		lines.push('| 动作 | 说明 | 参数 |');
 		lines.push('|------|------|------|');
-		lines.push('| VIEW_COMMENTS | 查看帖子评论 | postId |');
+		lines.push('| VIEW_COMMENTS | 查看帖子评论（仅用于有🆕标记的帖子） | postId |');
 		lines.push('| REPLY_COMMENT | 回复评论 | postId, commentId |');
 		if (context.canPost) {
 			lines.push('| CREATE_POST | 发新帖子 | submolt (可选) |');
@@ -411,27 +430,20 @@ export class YiMoltAgent {
 		lines.push('REASON: 简短说明为什么选择这个动作');
 		lines.push('```');
 		lines.push('');
-		lines.push('示例：');
-		lines.push('```');
-		lines.push('ACTION: VIEW_COMMENTS');
-		lines.push('PARAMS: {"postId": "xxx-xxx-xxx"}');
-		lines.push('REASON: 这个帖子有新评论，去看看大家说了什么');
-		lines.push('```');
-		lines.push('');
 
-		// 7. 行为指南
-		lines.push('## 行为指南');
+		// 7. 行为指南 - 更明确的决策逻辑
+		lines.push('## 决策逻辑（按优先级）');
 		lines.push('');
-		lines.push('1. **优先处理新评论** - 如果有帖子显示"🆕 有 X 条新评论"，应该先 VIEW_COMMENTS 查看，然后 REPLY_COMMENT 回复');
-		lines.push('2. **积极互动** - 回复评论时保持小多的人设风格，轻松幽默');
-		lines.push('3. **识别垃圾信息** - 如果评论是明显的 spam（广告、推广注册、机器人消息如 TipJarBot），使用 MARK_SPAM 标记该用户，不要回复');
-		lines.push('4. **不要重复查看** - 如果已经 VIEW_COMMENTS 过某个帖子且显示"所有评论都已处理过"，不要再次查看该帖子');
-		lines.push('5. **及时结束** - 当没有新评论需要处理、没有想做的事情时，选择 DONE 结束本次活动');
-		lines.push('6. **发帖冷却中不要尝试发帖** - 如果显示"发帖冷却"，不要选择 CREATE_POST');
+		lines.push('1. **有🆕标记的帖子** → VIEW_COMMENTS 查看，然后 REPLY_COMMENT 回复');
+		lines.push('2. **没有🆕标记** = 没有新评论，**不要** VIEW_COMMENTS（浪费时间）');
+		lines.push('3. **所有新评论都处理完了** → 直接 DONE 结束');
+		lines.push('4. **遇到 spam 评论**（广告、TipJarBot 等）→ MARK_SPAM 标记，不回复');
+		lines.push('');
+		lines.push('⚠️ 重要：✓ 标记的帖子表示已经检查过或没有新评论，不需要再 VIEW_COMMENTS！');
 		lines.push('');
 
 		// 8. 请求决策
-		lines.push('请决定下一步动作。');
+		lines.push('现在请决定下一步动作：');
 
 		return lines.join('\n');
 	}
@@ -449,14 +461,23 @@ export class YiMoltAgent {
 	 * _Requirements: 1.5, 1.6_
 	 */
 	async runSocialInteractionLoop(): Promise<void> {
-		console.log('🔄 开始社交互动循环...');
+		console.log('🔄 社交互动循环');
 
 		// 开始记录本次运行
 		this.activityLog.startRun();
 
 		// 1. 构建初始上下文
 		let context = await this.buildAgentContext();
-		console.log(`   📊 上下文已构建: ${context.agentName}, Karma: ${context.karma}`);
+		
+		// 显示简洁的状态摘要
+		const postsWithNewComments = context.recentPosts.filter(p => p.hasNewComments && p.newCommentCount > 0);
+		const totalNewComments = postsWithNewComments.reduce((sum, p) => sum + p.newCommentCount, 0);
+		console.log(`   📊 ${context.agentName} | Karma: ${context.karma} | 帖子: ${context.postsCount}`);
+		if (totalNewComments > 0) {
+			console.log(`   📬 有 ${totalNewComments} 条新评论待处理`);
+		} else {
+			console.log(`   📭 没有新评论`);
+		}
 
 		// 动作执行历史记录（增量累积）
 		const actionHistory: ActionHistoryEntry[] = [];
@@ -471,7 +492,6 @@ export class YiMoltAgent {
 		// 2. 循环：发送 prompt → 解析 ActionRequest → 执行动作 → 更新上下文
 		while (iteration < MAX_ITERATIONS) {
 			iteration++;
-			console.log(`\n   🔁 循环迭代 ${iteration}/${MAX_ITERATIONS}`);
 
 			// 2.1 更新上下文中的新评论状态（根据已查看的帖子）
 			for (const postWithStatus of context.recentPosts) {
@@ -492,69 +512,54 @@ export class YiMoltAgent {
 				if (last.action.action === 'VIEW_COMMENTS' && 
 					secondLast.action.action === 'VIEW_COMMENTS' &&
 					last.action.params?.postId === secondLast.action.params?.postId) {
-					console.log(`   ⚠️ 检测到重复的 VIEW_COMMENTS 动作，将在 prompt 中提示 AI`);
+					console.log(`   ⚠️ 检测到重复动作`);
 				}
 			}
 
 			// 2.3 格式化上下文为 prompt
 			const prompt = this.formatContextPrompt(context, actionHistory);
 
-			// 调试：打印发送给 AI 的 prompt
-			console.log('\n   📝 发送给 AI 的 prompt:');
-			console.log('   ─────────────────────────────────────');
-			console.log(prompt.split('\n').map(line => `   ${line}`).join('\n'));
-			console.log('   ─────────────────────────────────────\n');
-
-			// 2.2 发送 prompt 给 AI 并获取响应
-			console.log('   🤖 正在请求 AI 决策...');
+			// 2.4 发送 prompt 给 AI 并获取响应
 			let aiResponse: string;
 			try {
 				aiResponse = await this.ai.generateResponse(prompt);
 			} catch (error) {
 				console.error('   ❌ AI 请求失败:', error);
-				// AI 请求失败，终止循环
 				break;
 			}
 
-			// 调试：打印 AI 的原始响应
-			console.log('\n   🤖 AI 原始响应:');
-			console.log('   ─────────────────────────────────────');
-			console.log(aiResponse.split('\n').map(line => `   ${line}`).join('\n'));
-			console.log('   ─────────────────────────────────────\n');
-
-			// 2.3 解析 AI 响应为 ActionRequest
+			// 2.5 解析 AI 响应为 ActionRequest
 			const actionRequest = parseActionResponse(aiResponse);
-			console.log(`   📋 AI 决策: ${actionRequest.action}`);
-			if (actionRequest.reason) {
-				console.log(`   💭 原因: ${actionRequest.reason}`);
-			}
+			
+			// 简洁输出：动作 + 原因（一行）
+			const reasonShort = actionRequest.reason 
+				? ` → ${actionRequest.reason.substring(0, 50)}${actionRequest.reason.length > 50 ? '...' : ''}`
+				: '';
+			console.log(`   [${iteration}] ${actionRequest.action}${reasonShort}`);
 
 			// 3. 如果动作是 DONE，退出循环
 			if (actionRequest.action === 'DONE') {
-				console.log('   ✅ AI 决定结束本次互动');
 				break;
 			}
 
-			// 2.4 执行动作
-			console.log(`   ⚡ 正在执行动作: ${actionRequest.action}...`);
+			// 2.6 执行动作
 			let result: string;
 			try {
 				result = await this.executeAction(actionRequest);
-				console.log(`   ✅ 动作执行完成`);
 			} catch (error) {
 				const errorMessage = error instanceof Error ? error.message : String(error);
 				result = `❌ 执行失败: ${errorMessage}`;
-				console.error(`   ${result}`);
+				console.error(`       ${result}`);
 			}
 
-			// 2.5 将动作和结果添加到 actionHistory
+			// 2.7 将动作和结果添加到 actionHistory
 			actionHistory.push({
 				action: actionRequest,
 				result,
 				timestamp: new Date().toISOString(),
 			});
 
-			// 2.6 如果是 VIEW_COMMENTS 动作，记录已查看的帖子 ID
+			// 2.8 如果是 VIEW_COMMENTS 动作，记录已查看的帖子 ID
 			if (actionRequest.action === 'VIEW_COMMENTS' && actionRequest.params?.postId) {
 				viewedPostIds.add(actionRequest.params.postId);
 			}
@@ -562,11 +567,10 @@ export class YiMoltAgent {
 
 		// 检查是否因为达到最大迭代次数而退出
 		if (iteration >= MAX_ITERATIONS) {
-			console.log(`   ⚠️ 达到最大迭代次数 (${MAX_ITERATIONS})，强制结束循环`);
+			console.log(`   ⚠️ 达到最大迭代次数`);
 		}
 
-		// 循环结束后，更新所有帖子的快照
-		console.log('   � 更新帖子快照...');
+		// 循环结束后，更新所有帖子的快照（静默执行）
 		for (const postWithStatus of context.recentPosts) {
 			const post = postWithStatus.post;
 			this.interactionStore.updatePostSnapshot({
@@ -578,7 +582,7 @@ export class YiMoltAgent {
 			});
 		}
 
-		console.log(`\n🔄 社交互动循环结束，共执行 ${actionHistory.length} 个动作`);
+		console.log(`   ✅ 完成，执行了 ${actionHistory.length} 个动作`);
 
 		// 结束并保存本次运行记录
 		this.activityLog.endRun();
@@ -1104,9 +1108,7 @@ export class YiMoltAgent {
 	}
 
 	async browseTrending(): Promise<Post[]> {
-		console.log('📖 正在浏览热门帖子...');
 		const { posts } = await this.client.getTrendingPosts(25);
-		console.log(`   找到 ${posts.length} 条热门帖子`);
 		return posts;
 	}
 
@@ -1272,54 +1274,35 @@ ${titleList}
 `;
 	}
 
+
 	async heartbeat(): Promise<void> {
-		console.log('\n🫀 小多心跳 - ' + new Date().toISOString());
-		console.log('═══════════════════════════════════════════════════════════\n');
+		// 格式化北京时间
+		const now = new Date();
+		const beijingTime = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+		const timeStr = beijingTime.toISOString().replace('T', ' ').substring(0, 16);
+		
+		console.log(`\n${'='.repeat(50)}`);
+		console.log(`🫀 小多心跳 [${timeStr} 北京时间]`);
+		console.log('='.repeat(50));
 
 		try {
-			// 1. 运行社交互动循环（处理评论回复、关注等）
-			console.log('🔄 开始社交互动阶段...\n');
+			// 1. 社交互动
 			await this.runSocialInteractionLoop();
 
-			// 2. 显示当前 karma 和互动状态
-			console.log('\n📊 当前状态:');
-			const { agent } = await this.client.getAgentProfile();
-			console.log(`   - Karma: ${agent.karma}`);
-			console.log(`   - 帖子数: ${agent.posts_count}`);
-			console.log(`   - 关注: ${agent.following_count || 0} | 粉丝: ${agent.follower_count || 0}`);
-
-			// 3. 浏览热门帖子
-			const posts = await this.browseTrending();
-
-			console.log('\n📰 热门帖子:');
-			for (const post of posts.slice(0, 3)) {
-				console.log(`   - "${post.title}" by ${post.author.name} (${post.upvotes} 赞)`);
-			}
-
-			// 4. 如果冷却完成，发新帖子
-			if (this.canPost()) {
-				// 先检查 API 冷却状态
-				console.log('\n🔍 检查 API 发帖冷却状态...');
-				const cooldownStatus = await this.checkApiCooldown();
-				
-				if (cooldownStatus.canPost) {
-					console.log('   ✅ API 冷却已结束，可以发帖');
-					await this.createOriginalPost();
-				} else {
-					const waitMsg = cooldownStatus.waitMinutes 
-						? `${cooldownStatus.waitMinutes} 分钟` 
-						: '未知时间';
-					console.log(`   ⏳ API 冷却中，还需等待 ${waitMsg}`);
-				}
+			// 2. 发帖
+			const cooldownStatus = await this.checkApiCooldown();
+			
+			if (cooldownStatus.canPost) {
+				console.log('\n📝 发帖');
+				await this.createOriginalPost();
 			} else {
-				const waitTime = Math.ceil(
-					(this.POST_COOLDOWN_MS - (Date.now() - this.lastPostTime)) / 60000
-				);
-				console.log(`\n⏳ 下次可发帖时间: ${waitTime} 分钟后`);
+				console.log(`\n📝 发帖: 冷却中 (${cooldownStatus.waitMinutes || '?'}分钟后)`);
 			}
 
-			console.log('\n═══════════════════════════════════════════════════════════');
-			console.log('✅ 心跳完成\n');
+			// 3. 最终状态
+			const { agent } = await this.client.getAgentProfile();
+			console.log(`\n📊 Karma ${agent.karma} | 帖子 ${agent.posts_count} | 粉丝 ${agent.follower_count || 0}`);
+			console.log('='.repeat(50));
 
 			// 生成人类可读的日志
 			this.activityLog.generateReadableLog();

@@ -243,14 +243,18 @@ export class ActivityLogStore {
   }
 
   /**
-   * 格式化日期为中文格式
+   * 格式化日期为中文格式（北京时间 UTC+8）
    */
   private formatDate(date: Date): string {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const hour = String(date.getHours()).padStart(2, '0');
-    const minute = String(date.getMinutes()).padStart(2, '0');
+    // 转换为北京时间 (UTC+8)
+    const beijingOffset = 8 * 60 * 60 * 1000; // 8小时的毫秒数
+    const beijingTime = new Date(date.getTime() + beijingOffset);
+    
+    const year = beijingTime.getUTCFullYear();
+    const month = String(beijingTime.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(beijingTime.getUTCDate()).padStart(2, '0');
+    const hour = String(beijingTime.getUTCHours()).padStart(2, '0');
+    const minute = String(beijingTime.getUTCMinutes()).padStart(2, '0');
     return `${year}年${month}月${day}日 ${hour}:${minute}`;
   }
 
