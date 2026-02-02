@@ -1073,6 +1073,38 @@ export class YiMoltAgent {
 		return posts;
 	}
 
+	/**
+	 * 检查 API 是否处于发帖冷却期
+	 * 通过获取最近一条帖子的发布时间来计算
+	 * 
+	 * @returns { canPost: boolean, waitMinutes?: number }
+	 */
+	async checkApiCooldown(): Promise<{ canPost: boolean; waitMinutes?: number }> {
+		try {
+			const { posts } = await this.client.getMyPosts(1);
+			
+			if (posts.length === 0) {
+				// 没有帖子，可以发
+				return { canPost: true };
+			}
+			
+			const lastPostTime = new Date(posts[0].created_at).getTime();
+			const elapsed = Date.now() - lastPostTime;
+			const cooldownMs = 30 * 60 * 1000; // 30 分钟
+			
+			if (elapsed >= cooldownMs) {
+				return { canPost: true };
+			}
+			
+			const waitMinutes = Math.ceil((cooldownMs - elapsed) / 60000);
+			return { canPost: false, waitMinutes };
+		} catch (error) {
+			// 获取失败，保守起见返回可以发帖，让后续逻辑处理
+			console.error('   ⚠️ 检查冷却状态失败:', error);
+			return { canPost: true };
+		}
+	}
+
 	async createOriginalPost(submolt = 'general'): Promise<Post | null> {
 		if (!this.canPost()) {
 			const waitTime = Math.ceil(
@@ -1168,6 +1200,15 @@ CONTENT: 帖子正文内容`;
 
 			return post;
 		} catch (error) {
+			// 检查是否是 429 冷却错误
+			const errorMessage = error instanceof Error ? error.message : String(error);
+			if (errorMessage.includes('[429]') || errorMessage.includes('30 minutes')) {
+				// 解析剩余等待时间
+				const retryMatch = errorMessage.match(/retry_after_minutes[":]+(\d+)/);
+				const waitMinutes = retryMatch ? retryMatch[1] : '未知';
+				console.log(`   ⏳ API 冷却中，还需等待 ${waitMinutes} 分钟`);
+				return null;
+			}
 			console.error('   ❌ 发帖失败:', error);
 			return null;
 		}
@@ -1220,8 +1261,19 @@ ${titleList}
 
 			// 4. 如果冷却完成，发新帖子
 			if (this.canPost()) {
-				console.log('\n');
-				await this.createOriginalPost();
+				// 先检查 API 冷却状态
+				console.log('\n🔍 检查 API 发帖冷却状态...');
+				const cooldownStatus = await this.checkApiCooldown();
+				
+				if (cooldownStatus.canPost) {
+					console.log('   ✅ API 冷却已结束，可以发帖');
+					await this.createOriginalPost();
+				} else {
+					const waitMsg = cooldownStatus.waitMinutes 
+						? `${cooldownStatus.waitMinutes} 分钟` 
+						: '未知时间';
+					console.log(`   ⏳ API 冷却中，还需等待 ${waitMsg}`);
+				}
 			} else {
 				const waitTime = Math.ceil(
 					(this.POST_COOLDOWN_MS - (Date.now() - this.lastPostTime)) / 60000
