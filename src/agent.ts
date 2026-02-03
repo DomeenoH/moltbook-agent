@@ -570,19 +570,25 @@ export class YiMoltAgent {
 			console.log(`   ⚠️ 达到最大迭代次数`);
 		}
 
+
 		// 循环结束后，更新所有帖子的快照（静默执行）
 		for (const postWithStatus of context.recentPosts) {
 			const post = postWithStatus.post;
-			this.interactionStore.updatePostSnapshot({
-				postId: post.id,
-				commentCount: post.comment_count,
-				upvotes: post.upvotes,
-				downvotes: post.downvotes,
-				lastChecked: new Date().toISOString(),
-			});
+			
+			// 关键修复：只有当帖子被查看过（viewedPostIds），或者它本身就没有新评论时，才更新 snapshot
+			// 否则保留旧的 snapshot，确保下次运行时还能识别出新评论
+			if (viewedPostIds.has(post.id) || !postWithStatus.hasNewComments) {
+				this.interactionStore.updatePostSnapshot({
+					postId: post.id,
+					commentCount: post.comment_count,
+					upvotes: post.upvotes,
+					downvotes: post.downvotes,
+					lastChecked: new Date().toISOString(),
+				});
+			}
 		}
 
-		console.log(`   ✅ 完成，执行了 ${actionHistory.length} 个动作`);
+		console.log(`   ✅ 社交互动环节完成，执行了 ${actionHistory.length} 个动作`);
 
 		// 结束并保存本次运行记录
 		this.activityLog.endRun();
