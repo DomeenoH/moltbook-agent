@@ -463,8 +463,7 @@ export class YiMoltAgent {
 	async runSocialInteractionLoop(): Promise<void> {
 		console.log('🔄 社交互动循环');
 
-		// 开始记录本次运行
-		this.activityLog.startRun();
+		console.log('🔄 社交互动循环');
 
 		// 1. 构建初始上下文
 		let context = await this.buildAgentContext();
@@ -590,8 +589,6 @@ export class YiMoltAgent {
 
 		console.log(`   ✅ 社交互动环节完成，执行了 ${actionHistory.length} 个动作`);
 
-		// 结束并保存本次运行记录
-		this.activityLog.endRun();
 	}
 
 	/**
@@ -1293,6 +1290,9 @@ ${titleList}
 		console.log(`🫀 小多心跳 [${timeStr} 北京时间]`);
 		console.log('='.repeat(50));
 
+		// 开始记录本次运行日志
+		this.activityLog.startRun();
+
 		try {
 			// 1. 社交互动
 			await this.runSocialInteractionLoop();
@@ -1312,10 +1312,15 @@ ${titleList}
 			console.log(`\n📊 Karma ${agent.karma} | 帖子 ${agent.posts_count} | 粉丝 ${agent.follower_count || 0}`);
 			console.log('='.repeat(50));
 
+			// 结束记录并保存
+			this.activityLog.endRun();
+
 			// 生成人类可读的日志
 			this.activityLog.generateReadableLog();
 		} catch (error) {
 			console.error('❌ 心跳出错:', error);
+			// 出错也要保存日志
+			this.activityLog.endRun();
 		}
 	}
 }
