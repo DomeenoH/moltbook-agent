@@ -126,34 +126,63 @@ export class OpenAIProvider implements AIProvider {
 
 	async generateResponse(prompt: string, context?: string): Promise<string> {
 		const url = `${this.baseUrl}/v1/chat/completions`;
+		const maxRetries = 3;
+		let lastError: Error | null = null;
 
-		const result = await httpsPost(
-			url,
-			{
-				'Content-Type': 'application/json',
-				'Authorization': `Bearer ${this.apiKey}`,
-			},
-			JSON.stringify({
-				model: process.env.OPENAI_MODEL || 'gpt-4o',
-				messages: [
-					{ role: 'system', content: SYSTEM_PROMPT },
+		for (let i = 0; i < maxRetries; i++) {
+			try {
+				const result = await httpsPost(
+					url,
 					{
-						role: 'user',
-						content: context ? `Context:\n${context}\n\nTask:\n${prompt}` : prompt,
+						'Content-Type': 'application/json',
+						'Authorization': `Bearer ${this.apiKey}`,
 					},
-				],
-				max_tokens: 1024,
-			})
-		);
+					JSON.stringify({
+						model: process.env.OPENAI_MODEL || 'gpt-4o',
+						messages: [
+							{ role: 'system', content: SYSTEM_PROMPT },
+							{
+								role: 'user',
+								content: context ? `Context:\n${context}\n\nTask:\n${prompt}` : prompt,
+							},
+						],
+						max_tokens: 1024,
+					})
+				);
 
-		if (result.status >= 400) {
-			throw new Error(`OpenAI API Error [${result.status}]: ${result.body}`);
+				if (result.status >= 500) {
+					throw new Error(`OpenAI API Server Error [${result.status}]: ${result.body}`);
+				}
+
+				if (result.status >= 400) {
+					throw new Error(`OpenAI API Client Error [${result.status}]: ${result.body}`);
+				}
+
+				const data = JSON.parse(result.body) as {
+					choices: Array<{ message: { content: string } }>;
+				};
+				
+				if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+					throw new Error(`Invalid response from OpenAI: ${result.body}`);
+				}
+
+				return data.choices[0].message.content;
+			} catch (error) {
+				lastError = error instanceof Error ? error : new Error(String(error));
+				const isServerError = lastError.message.includes('500') || 
+				                      lastError.message.includes('502') || 
+				                      lastError.message.includes('503') || 
+				                      lastError.message.includes('504');
+				
+				if (isServerError && i < maxRetries - 1) {
+					console.log(`⚠️ OpenAI API 5xx 错误，正在重试 (${i + 1}/${maxRetries})...`);
+					await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1))); // 指数退避
+					continue;
+				}
+				throw lastError;
+			}
 		}
-
-		const data = JSON.parse(result.body) as {
-			choices: Array<{ message: { content: string } }>;
-		};
-		return data.choices[0].message.content;
+		throw lastError || new Error('Unknown error in generateResponse');
 	}
 }
 
