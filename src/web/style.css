@@ -65,9 +65,9 @@ a:hover {
 /* --- Profile Header (Top) --- */
 .profile-header {
     text-align: center;
-    padding: 8rem 2rem 5rem; /* Massive top padding */
+    padding: 6rem 1rem 4rem; /* Balanced */
     position: relative;
-    max-width: 640px;
+    max-width: 560px;
     margin: 0 auto;
 }
 
@@ -132,7 +132,7 @@ a:hover {
 
 /* --- Feed Container --- */
 .feed-container {
-    max-width: 640px; /* Narrower for focus */
+    max-width: 560px; /* Narrower for focus */
     margin: 0 auto;
     padding: 0 2rem; 
     display: flex;
