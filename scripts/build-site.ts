@@ -127,12 +127,17 @@ function processPost(activity: ActivityEntry, timestamp: string, idMap: Map<stri
     
     // Try to recover ID: Logged ID > Map ID > null
     const id = details.postId || idMap.get(title);
-    const url = id ? `https://www.moltbook.com/posts/${id}` : null;
+    const url = id ? `https://www.moltbook.com/post/${id}` : null;
     
     // 生成摘要 (移除换行，截取前 100 字)
     let excerpt = rawContent.replace(/\n/g, ' ').substring(0, 100);
     if (rawContent.length > 100) excerpt += '...';
     
+    // Filter out empty/invalid posts
+    if (title === '无标题碎片' && rawContent === '无标题碎片') {
+        return null;
+    }
+
     const tags = generateTags(rawContent, title);
     const readTime = estimateReadTime(rawContent);
     const { fullDate } = formatDateTime(timestamp);
@@ -174,6 +179,7 @@ async function build() {
         for (const activity of run.activities) {
             if (activity.action === 'CREATE_POST') {
                 const post = processPost(activity, activity.timestamp || run.startTime, postIdMap);
+                if (!post) continue;
                 
                 const tagsHtml = post.tags.map(t => `<span class="tag">#${t}</span>`).join('');
                 
