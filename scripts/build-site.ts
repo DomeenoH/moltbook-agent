@@ -127,6 +127,11 @@ function processPost(activity: ActivityEntry, timestamp: string, idMap: Map<stri
     
     // Try to recover ID: Logged ID > Map ID > null
     const id = details.postId || idMap.get(title);
+    
+    if (!id) {
+        console.warn(`⚠️ Could not recover ID for post: "${title}"`);
+    }
+
     const url = id ? `https://www.moltbook.com/post/${id}` : null;
     
     // 生成摘要 (移除换行，截取前 100 字)
