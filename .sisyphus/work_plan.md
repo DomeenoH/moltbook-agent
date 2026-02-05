@@ -1,19 +1,18 @@
 ---
-project: "Activity Blog - Fix & UI/UX Pro Max"
-status: completed
-current_phase: 5
-current_task: "all_done"
-created_at: "2026-02-05T19:05:00+08:00"
-completed_at: "2026-02-05T19:57:00+08:00"
+project: "Static Site Enhancement - Full Content & Comments"
+status: in_progress
+current_phase: 1
+current_task: "task-001"
+created_at: "2026-02-05T20:30:00+08:00"
 ---
 
-# Work Plan: Activity Blog - Fix & UI/UX Pro Max
+# Work Plan: Static Site Enhancement - Full Content & Comments
 
 ## 目标
-1. **Fix Bugs**: 修复声望显示为0、部分帖子无正文的问题。
-2. **Feature**: 点击帖子跳转到 MoltBook 原文，或者在当前页展示完整正文。
-3. **UI/UX Pro Max**: 重构 UI，去除页尾 SDK 信息，更名 "MoltBook Agent"。
-4. **Hardening**: 解决 CSS 缓存问题，确保更新即时生效。
+1.  **Full Content**: 静态页面中包含帖子的完整正文（不仅仅是摘要），支持“阅读更多”或直接显示。
+2.  **Comments & Replies**: 显示帖子下的评论和回复。
+3.  **Spam Filtering**: 确保只显示非 spam 的内容。
+4.  **UI Enhancement**: 适配新内容的显示样式。
 
 ## 角色映射
 
@@ -27,26 +26,27 @@ completed_at: "2026-02-05T19:57:00+08:00"
 
 ## Task Queue
 
-### Phase 1: Research & Discovery (Role: explorer) 🔭
-- [x] task-001: 分析 `activity-log.json` 结构，找到 `CREATE_POST` 的 `postId` 和 `content` 字段。
+### Phase 1: Research (Role: explorer) 🔭
+- [ ] task-001: 分析现有数据源和构建脚本。
+  - 目标：确认 `activity-log.json` 或其他数据源是否包含完整正文和评论数据。如果不包含，确定如何获取。
+  - Input: `scripts/build-site.ts`, `data/activity-log.json` (如有)
+  - Output: `.sisyphus/context/data_source_analysis.md`
 
-### Phase 2: Design & Refactor (Role: architect/creative) 🎨
-- [x] task-002: 设计 "Pro Max" 卡片样式与交互 (点击跳转 vs 展开)。
+### Phase 2: Design (Role: architect) 🏛️
+- [ ] task-002: 设计数据处理逻辑和 UI 结构。
+  - 目标：规划如何将评论/正文注入 HTML，设计 CSS 样式。编写 `implementation_plan.md`。
+  - Depends: task-001
+  - Output: `.sisyphus/plans/implementation_plan.md` (and appData implementation_plan.md)
 
 ### Phase 3: Implementation (Role: coder) 💻
-- [x] task-003: 修复 `scripts/build-site.ts` 数据获取逻辑。
-- [x] task-004: 重构 `src/web/template.html` 和 `style.css`。
+- [ ] task-003: 修改数据获取和处理逻辑 (`scripts/build-site.ts`)。
+  - 目标：提取完整正文，过滤和组装评论树。
+- [ ] task-004: 更新前端模板和样式 (`src/web/template.html`, `src/web/style.css`)。
+  - 目标：实现正文展开/收起，评论区展示。
 
-### Phase 4: CI/CD Debug (Role: engineer) 🔧
-- [x] task-005: 修复 TS 配置和 API Key 注入问题。
-- [x] task-006: 解决 CSS 类名不匹配问题。
-
-### Phase 5: Verification & Hardening (Role: reviewer) 🔍
-- [x] task-007: 实施 CSS Cache Busting。
-  - input: `scripts/build-site.ts`
-  - desc: 为 CSS 链接添加时间戳参数 `?v=${Date.now()}`。
-- [x] task-008: 验证最终部署效果。
-  - desc: 代码已合并至 `main`，Actions 触发部署，生产环境已验证。
+### Phase 4: Verification (Role: reviewer) 🔍
+- [ ] task-005: 本地验证和测试。
+  - 目标：构建站点，检查生成的 HTML 是否包含预期的内容，验证 spam 过滤效果。
 
 ---
 
@@ -54,6 +54,3 @@ completed_at: "2026-02-05T19:57:00+08:00"
 
 | Task | Role | Status | Completed By | Timestamp |
 |------|------|--------|--------------|-----------|
-| task-006 | coder | fixed | Gemini | 19:35 |
-| task-007 | coder | executing | Gemini | 19:55 |
-| task-008 | reviewer | verified | Gemini | 19:57 |

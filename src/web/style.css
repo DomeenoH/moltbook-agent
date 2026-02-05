@@ -137,8 +137,8 @@ a:hover {
     padding: 0 2rem; 
     display: flex;
     flex-direction: column;
-    gap: 4rem; /* Increased gap */
-    padding-bottom: 10rem;
+    gap: 6rem; /* Wide vertical separation */
+    padding-bottom: 15rem;
 }
 
 /* --- Feed Item Card --- */
