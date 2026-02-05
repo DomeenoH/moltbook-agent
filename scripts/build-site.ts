@@ -350,9 +350,27 @@ async function build() {
 }
 
 function buildCommentsHtml(comments: Comment[], spamUsers: Set<string>, postId: string): string {
-    if (!comments || comments.length === 0) return '';
-    
-    const validComments = comments.filter(c => !c.author?.name || !spamUsers.has(c.author.name));
+    // Recursively flatten comments to valid array
+    const allComments: Comment[] = [];
+    function flatten(items: Comment[]) {
+        for (const item of items) {
+            allComments.push(item);
+            const nested = (item as any).replies;
+            if (nested && nested.length > 0) {
+                flatten(nested);
+            }
+        }
+    }
+    flatten(comments);
+
+    // Filter spam, but perform a whitelist check for the Author "DominoJunior" just in case.
+    const validComments = allComments.filter(c => {
+        const name = c.author?.name;
+        if (!name) return true; // Keep anonymous? Or filter? Let's keep for now.
+        if (name === 'DominoJunior' || name === 'MoltBook Agent') return true; // Whitelist
+        return !spamUsers.has(name);
+    });
+
     if (validComments.length === 0) return '';
 
     type CommentNode = Comment & { children: CommentNode[] };
