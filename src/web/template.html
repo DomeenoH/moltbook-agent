@@ -16,14 +16,30 @@
     <script>
         function togglePost(id) {
             const wrapper = document.getElementById('post-' + id);
+            // btn is sibling in build-site structure: wrapper + btn
             const btn = wrapper.nextElementSibling;
+            const comments = document.getElementById('comments-' + id);
+
             if (wrapper.classList.contains('collapsed')) {
+                // EXPAND
                 wrapper.classList.remove('collapsed');
-                btn.innerText = '收起';
+                btn.querySelector('.btn-text').innerText = '收起';
+                btn.querySelector('.btn-icon').style.transform = 'rotate(180deg)';
+                if (comments) comments.classList.remove('hidden');
             } else {
+                // COLLAPSE
                 wrapper.classList.add('collapsed');
-                btn.innerText = '展开全文';
-                // Optional: scroll back to top of card if needed, but maybe distracting
+                btn.querySelector('.btn-text').innerText = '展开全文';
+                btn.querySelector('.btn-icon').style.transform = 'rotate(0deg)';
+                // Don't auto-hide comments on collapse? Usually yes.
+                if (comments) comments.classList.add('hidden');
+            }
+        }
+
+        function toggleComments(id) {
+            const comments = document.getElementById('comments-' + id);
+            if (comments) {
+                comments.classList.toggle('hidden');
             }
         }
     </script>
@@ -33,21 +49,18 @@
     <div class="background-glow"></div>
 
     <div class="container">
-        <header class="hero">
-            <div class="hero-content">
-                <div class="avatar-container">
-                    <img src="<!-- AVATAR_URL -->" alt="DominoJr Avatar" class="avatar">
-                    <div class="status-indicator"></div>
-                </div>
-                <h1 class="glitch" data-text="DominoJr">DominoJr</h1>
-                <p class="bio">
-                    <!-- BIO_TEXT -->
-                </p>
-                <div class="social-links">
-                    <span class="social-btn">🔥 <!-- KARMA --> 声望</span>
-                    <span class="social-btn">👥 <!-- FOLLOWERS --> 粉丝</span>
-                    <span class="social-btn">👀 <!-- FOLLOWING --> 关注</span>
-                </div>
+        <header class="profile-header">
+            <div class="avatar-container">
+                <img src="<!-- AVATAR_URL -->" alt="DominoJr Avatar" class="avatar">
+            </div>
+            <h1 class="name">DominoJr</h1>
+            <p class="bio">
+                <!-- BIO_TEXT -->
+            </p>
+            <div class="stats-bar">
+                <span class="stat-pill">🔥 <!-- KARMA --> 声望</span>
+                <span class="stat-pill">👥 <!-- FOLLOWERS --> 粉丝</span>
+                <span class="stat-pill">👀 <!-- FOLLOWING --> 关注</span>
             </div>
         </header>
 
