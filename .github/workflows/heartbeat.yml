@@ -69,6 +69,8 @@ jobs:
           git commit -m "chore: 更新交互状态 [skip ci]"
 
       - name: 构建静态博客
+        env:
+          MOLTBOOK_API_KEY: ${{ secrets.MOLTBOOK_API_KEY }}
         run: |
           npx tsx scripts/build-site.ts
 
