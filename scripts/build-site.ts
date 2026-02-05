@@ -207,6 +207,10 @@ async function build() {
 
     // 6. 写入文件
     fs.writeFileSync(path.join(DIST_DIR, 'index.html'), template);
+    
+    // 7. 配置自定义域名 (CNAME)
+    fs.writeFileSync(path.join(DIST_DIR, 'CNAME'), 'jr.dominoh.com');
+    
     console.log(`✅ Build complete! Generated ${postCount} posts.`);
 }
 
