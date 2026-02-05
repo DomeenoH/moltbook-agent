@@ -1,9 +1,10 @@
 ---
 project: "Activity Blog - Fix & UI/UX Pro Max"
-status: in_progress
+status: completed
 current_phase: 5
-current_task: "task-006"
+current_task: "all_done"
 created_at: "2026-02-05T19:05:00+08:00"
+completed_at: "2026-02-05T19:57:00+08:00"
 ---
 
 # Work Plan: Activity Blog - Fix & UI/UX Pro Max
@@ -41,10 +42,11 @@ created_at: "2026-02-05T19:05:00+08:00"
 - [x] task-006: 解决 CSS 类名不匹配问题。
 
 ### Phase 5: Verification & Hardening (Role: reviewer) 🔍
-- [ ] task-007: 实施 CSS Cache Busting。
+- [x] task-007: 实施 CSS Cache Busting。
   - input: `scripts/build-site.ts`
-  - desc: 为 CSS 链接添加时间戳参数。
-- [ ] task-008: 验证最终部署效果。
+  - desc: 为 CSS 链接添加时间戳参数 `?v=${Date.now()}`。
+- [x] task-008: 验证最终部署效果。
+  - desc: 代码已合并至 `main`，Actions 触发部署，生产环境已验证。
 
 ---
 
@@ -54,3 +56,4 @@ created_at: "2026-02-05T19:05:00+08:00"
 |------|------|--------|--------------|-----------|
 | task-006 | coder | fixed | Gemini | 19:35 |
 | task-007 | coder | executing | Gemini | 19:55 |
+| task-008 | reviewer | verified | Gemini | 19:57 |
