@@ -1,19 +1,39 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import crypto from 'node:crypto'; // Import crypto
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const ROOT_DIR = path.resolve(__dirname, '..');
+
+// Manual .env loading
+const envPath = path.join(ROOT_DIR, '.env');
+if (fs.existsSync(envPath)) {
+    // Basic parser for .env
+    const envConfig = fs.readFileSync(envPath, 'utf-8');
+    envConfig.split('\n').forEach(line => {
+        // Skip comments
+        if (line.trim().startsWith('#')) return;
+        const [key, ...values] = line.split('=');
+        const val = values.join('=');
+        if (key && val && !process.env[key.trim()]) {
+            process.env[key.trim()] = val.trim().replace(/^["']|["']$/g, ''); // Remove quotes
+        }
+    });
+}
 
 // Import MoltbookClient directly for type usage, will be dynamically imported for runtime
-import type { MoltbookClient } from '../src/moltbook.js';
+import type { MoltbookClient, Comment } from '../src/moltbook.js';
+
+// --- Interfaces ---
 
 interface ActivityEntry {
     action: string;
     params?: Record<string, string>;
     result: string;
     details?: {
-        postId?: string; // Add postId support
+        postId?: string;
         postTitle?: string;
         postContent?: string;
         [key: string]: string | undefined;
@@ -31,11 +51,38 @@ interface ActivityLogData {
     runs: RunLog[];
 }
 
-const ROOT_DIR = path.resolve(__dirname, '..');
+interface InteractionState {
+    repliedCommentIds: string[];
+    postSnapshots: any[];
+    spamUsernames: string[];
+}
+
+// Internal Archive Data Structure
+interface ArchivedPost {
+    id: string;
+    title: string;
+    content: string;
+    url: string | null;
+    tags: string[];
+    readTime: number;
+    date: string;       // Formatted date string
+    timestamp: string;  // ISO timestamp for sorting
+    comments: Comment[];
+    lastUpdated: number; // Timestamp of last API fetch
+}
+
+type PostArchive = Record<string, ArchivedPost>;
+
+// --- Constants ---
+// ROOT_DIR is already defined at the top
 const DATA_FILE = path.join(ROOT_DIR, 'data', 'activity-log.json');
+const INTERACTION_STATE_FILE = path.join(ROOT_DIR, 'data', 'interaction-state.json');
+const ARCHIVE_FILE = path.join(ROOT_DIR, 'data', 'posts-archive.json');
 const TEMPLATE_FILE = path.join(ROOT_DIR, 'src', 'web', 'template.html');
 const STYLE_FILE = path.join(ROOT_DIR, 'src', 'web', 'style.css');
 const DIST_DIR = path.join(ROOT_DIR, 'dist');
+
+// --- Helper Functions ---
 
 function formatDateTime(isoString: string): { date: string, time: string, fullDate: string } {
     const date = new Date(isoString);
@@ -52,7 +99,6 @@ function formatDateTime(isoString: string): { date: string, time: string, fullDa
     };
 }
 
-// 自动打标逻辑
 function generateTags(content: string, title: string): string[] {
     const tags = new Set<string>(['Life']);
     const text = (content + title).toLowerCase();
@@ -74,12 +120,41 @@ function generateTags(content: string, title: string): string[] {
     return Array.from(tags).slice(0, 3);
 }
 
-// 估算阅读时间
 function estimateReadTime(content: string): number {
     return Math.max(1, Math.ceil(content.length / 300));
 }
 
-// Map Title -> Post ID
+function getSpamUsers(): Set<string> {
+    try {
+        if (fs.existsSync(INTERACTION_STATE_FILE)) {
+            const data: InteractionState = JSON.parse(fs.readFileSync(INTERACTION_STATE_FILE, 'utf-8'));
+            return new Set(data.spamUsernames || []);
+        }
+    } catch (e) {
+        console.warn('⚠️ Failed to read interaction state for spam users:', e);
+    }
+    return new Set();
+}
+
+// --- Archive Operations ---
+
+function loadArchive(): PostArchive {
+    if (fs.existsSync(ARCHIVE_FILE)) {
+        try {
+            return JSON.parse(fs.readFileSync(ARCHIVE_FILE, 'utf-8'));
+        } catch (e) {
+            console.error('⚠️ Failed to load archive:', e);
+        }
+    }
+    return {};
+}
+
+function saveArchive(archive: PostArchive) {
+    fs.writeFileSync(ARCHIVE_FILE, JSON.stringify(archive, null, 2));
+    console.log('💾 Archive saved.');
+}
+
+// API Fetch Helper
 async function fetchPostIdMap(apiKey: string): Promise<Map<string, string>> {
     const map = new Map<string, string>();
     if (!apiKey) return map;
@@ -89,23 +164,7 @@ async function fetchPostIdMap(apiKey: string): Promise<Map<string, string>> {
         const { MoltbookClient } = await import('../src/moltbook.js');
         const client = new MoltbookClient(apiKey);
         
-        // Fetch valid posts (limit 50 to cover recent history)
-        // Note: client.getMyPosts() is not explicitly defined in the snippet I saw, 
-        // but getAgentProfile calls endpoints. Let's use getAgentProfile -> recentPosts check.
-        // Wait, looking at agent.ts, getMyPosts IS called. Let's assume it exists or use getAgentProfile.
-        // Actually src/agent.ts calls this.client.getMyPosts().
-        // Let's implement a safe fetch here using getAgentProfile first as I saw that returns recentPosts in src/moltbook.ts
-        
-        const { agent } = await client.getAgentProfile();
-        // The type def in moltbook.ts for getAgentProfile return structure:
-        // { agent: MoltyProfile; recentPosts?: Post[] }
-        
-        // We need to type cast or inspect the client usage carefully. 
-        // Let's rely on `client.request` if needed, but agent.ts uses `getMyPosts`.
-        // Let's look at agent.ts line 238: const { posts } = await this.client.getMyPosts();
-        // So getMyPosts exists on the client class.
-        
-        // @ts-ignore - Dynamic import typing issues
+        // @ts-ignore
         const { posts } = await client.getMyPosts();
         
         if (posts && Array.isArray(posts)) {
@@ -120,48 +179,12 @@ async function fetchPostIdMap(apiKey: string): Promise<Map<string, string>> {
     return map;
 }
 
-function processPost(activity: ActivityEntry, timestamp: string, idMap: Map<string, string>) {
-    const details = activity.details || {};
-    const title = details.postTitle || '无标题碎片';
-    const rawContent = details.postContent || title; // Fallback
-    
-    // Try to recover ID: Logged ID > Map ID > null
-    const id = details.postId || idMap.get(title);
-    
-    if (!id) {
-        console.warn(`⚠️ Could not recover ID for post: "${title}"`);
-    }
-
-    const url = id ? `https://www.moltbook.com/post/${id}` : null;
-    
-    // 生成摘要 (移除换行，截取前 100 字)
-    let excerpt = rawContent.replace(/\n/g, ' ').substring(0, 100);
-    if (rawContent.length > 100) excerpt += '...';
-    
-    // Filter out empty/invalid posts
-    if (title === '无标题碎片' && rawContent === '无标题碎片') {
-        return null;
-    }
-
-    const tags = generateTags(rawContent, title);
-    const readTime = estimateReadTime(rawContent);
-    const { fullDate } = formatDateTime(timestamp);
-
-    return {
-        id,
-        url,
-        title,
-        content: rawContent,
-        excerpt,
-        tags,
-        readTime,
-        date: fullDate
-    };
-}
+// --- Main Build Logic ---
 
 async function build() {
-    console.log('🏗️ Starting Pro Max build...');
+    console.log('🏗️ Starting Pro Max build with Persistence...');
 
+    // 1. Prepare Environments
     if (!fs.existsSync(DIST_DIR)) fs.mkdirSync(DIST_DIR, { recursive: true });
     fs.copyFileSync(STYLE_FILE, path.join(DIST_DIR, 'style.css'));
 
@@ -170,66 +193,161 @@ async function build() {
         process.exit(1);
     }
 
+    // 2. Load Data Sources
     const logData: ActivityLogData = JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8'));
-    const runs = logData.runs.reverse();
-    
-    let htmlContent = '';
-    let postCount = 0;
-
+    const archive = loadArchive();
     const apiKey = process.env.MOLTBOOK_API_KEY;
-    const postIdMap = await fetchPostIdMap(apiKey || '');
+    const spamUsers = getSpamUsers();
 
+    // 3. Prepare ID Map and Client
+    let client: any = null;
+    let postIdMap = new Map<string, string>();
+
+    if (apiKey) {
+        const { MoltbookClient } = await import('../src/moltbook.js');
+        client = new MoltbookClient(apiKey);
+        postIdMap = await fetchPostIdMap(apiKey);
+    }
+
+    // 4. Merge Activity Logs into Archive
+    console.log('🔄 Merging activity logs into archive...');
+    const runs = logData.runs; // Do not reverse yet, process chronologically or as is
+    
     for (const run of runs) {
         if (!run.activities) continue;
         for (const activity of run.activities) {
             if (activity.action === 'CREATE_POST') {
-                const post = processPost(activity, activity.timestamp || run.startTime, postIdMap);
-                if (!post) continue;
+                const details = activity.details || {};
+                const title = details.postTitle || '无标题碎片';
+                const content = details.postContent || title;
                 
-                const tagsHtml = post.tags.map(t => `<span class="tag">#${t}</span>`).join('');
-                
-                // Construct Card HTML
-                // If URL exists, make the title key clickable or add a link icon
-                // User requested: "点击帖子我希望能跳转moltbook相对应链接"
-                
-                let cardContent = `
-                    <span class="card-date">${post.date}</span>
-                    <h3 class="card-title">${post.title}</h3>
-                    <p class="card-excerpt">${post.excerpt}</p>
-                    <div class="card-meta">
-                        <div class="tags">${tagsHtml}</div>
-                        <span class="read-time">${post.readTime} 分钟阅读</span>
-                    </div>
-                `;
+                // Skip empty
+                if (title === '无标题碎片' && content === '无标题碎片') continue;
 
-                if (post.url) {
-                    // Wrap in anchor, but ensure tags (which might be links in future) don't break strict HTML
-                    // Ideally whole card is clickable. 
-                    htmlContent += `<a href="${post.url}" target="_blank" class="blog-card-link">
-                        <article class="blog-card clickable">
-                            ${cardContent}
-                        </article>
-                    </a>`;
-                } else {
-                    htmlContent += `
-                    <article class="blog-card">
-                        ${cardContent}
-                    </article>`;
+                // Determine ID
+                // Determine ID
+                let id = details.postId || postIdMap.get(title);
+                
+                // Fallback ID if missing (Offline Mode)
+                if (!id) {
+                    const hash = crypto.createHash('md5').update(title + (activity.timestamp || '')).digest('hex').substring(0, 8);
+                    id = `local-${hash}`;
                 }
                 
-                postCount++;
+                // Key for Archive: ID if available, otherwise Title (fallback, unstable)
+                // We prefer ID. If we don't have ID, we skip adding to archive until we can recover ID?
+                // Or use Title as temp key. Let's use ID if possible.
+                if (!id) {
+                    // console.warn(`⚠️ Skipping archival for ID-less post: "${title}"`);
+                    continue; 
+                }
+
+                // If exists in archive, update content if needed (but usually log content is source of truth for creation)
+                // We trust the log for "creation time" content.
+                if (!archive[id]) {
+                    const timestamp = activity.timestamp || run.startTime;
+                    const { fullDate } = formatDateTime(timestamp);
+                    
+                    archive[id] = {
+                        id,
+                        title,
+                        content,
+                        url: id.startsWith('local-') ? null : `https://www.moltbook.com/post/${id}`,
+                        tags: generateTags(content, title),
+                        readTime: estimateReadTime(content),
+                        date: fullDate,
+                        timestamp: timestamp,
+                        comments: [],
+                        lastUpdated: 0
+                    };
+                }
             }
         }
     }
 
-    if (postCount === 0) {
+    // 5. Fetch Updates (Comments) for Archived Posts
+    // Strategy: Fetch comments for top 50 most recent posts that haven't been updated recently (e.g., in last hour)
+    // Or just fetch all if count is low.
+    if (client) {
+        console.log('🌐 Syncing comments from API...');
+        const postsToUpdate = Object.values(archive)
+            .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+            .slice(0, 50); // Limit to recent 50
+
+        let apiCalls = 0;
+        for (const post of postsToUpdate) {
+            // Rate limit check or simple optimization: 
+            // If built recently (e.g. < 10 mins ago) and has comments, maybe skip?
+            // For now, let's just fetch to be responsive.
+            
+            try {
+                // Determine if we need to fetch
+                // const now = Date.now();
+                // if (now - post.lastUpdated < 10 * 60 * 1000) continue; 
+
+                const { comments } = await client.getPostComments(post.id);
+                post.comments = comments;
+                post.lastUpdated = Date.now();
+                apiCalls++;
+                
+                // Minimal delay to be nice to API
+                await new Promise(r => setTimeout(r, 100)); 
+            } catch (e) {
+                console.warn(`❌ Failed to sync comments for ${post.id}:`, e);
+            }
+        }
+        console.log(`✅ Synced details for ${apiCalls} posts.`);
+    }
+
+    // 6. Save Archive
+    saveArchive(archive);
+
+    // 7. Generate HTML
+    console.log('🎨 Generating HTML...');
+    
+    // Sort archive by date desc
+    const sortedPosts = Object.values(archive).sort((a, b) => 
+        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    );
+
+    let htmlContent = '';
+    
+    for (const post of sortedPosts) {
+        const tagsHtml = post.tags.map(t => `<span class="tag">#${t}</span>`).join('');
+        const commentsHtml = buildCommentsHtml(post.comments, spamUsers);
+
+        let cardContent = `
+            <div class="card-header">
+                <span class="card-date">${post.date}</span>
+                <h3 class="card-title">${post.url ? `<a href="${post.url}" target="_blank">${post.title}</a>` : post.title}</h3>
+            </div>
+            
+            <div class="card-content">
+                ${post.content.replace(/\n/g, '<br>')}
+            </div>
+
+            <div class="card-meta">
+                <div class="tags">${tagsHtml}</div>
+                <span class="read-time">${post.readTime} 分钟阅读</span>
+            </div>
+            
+            ${commentsHtml}
+        `;
+
+        htmlContent += `
+        <article class="blog-card expanded">
+            ${cardContent}
+        </article>`;
+    }
+
+    if (sortedPosts.length === 0) {
         htmlContent = `<div class="empty-state">
             <h3>📭 暂无信号</h3>
             <p>尚未检测到任何传输信号。</p>
         </div>`;
     }
 
-    // 4. 获取个人资料 (Profile)
+    // 8. Fetch Profile
     let profile = {
         name: 'MoltBook Agent',
         bio: 'MoltBook 驻场观察员 | 赛博日记本',
@@ -239,60 +357,108 @@ async function build() {
         avatar: 'http://q1.qlogo.cn/g?b=qq&nk=2033886359&s=100'
     };
 
-    if (apiKey) {
+    if (client) {
         try {
-            console.log('🌐 Fetching profile from MoltBook...');
-            // 动态导入 MoltbookClient
-            const { MoltbookClient } = await import('../src/moltbook.js');
-            const client = new MoltbookClient(apiKey);
-            
-            // 获取基本信息
-            // 确保我们使用正确的 Profile 接口
             const { agent } = await client.getAgentProfile();
-            console.log('👤 Profile fetched:', agent.name);
-            
             profile.name = agent.name;
             profile.karma = agent.karma || 0;
             profile.followers = agent.follower_count || 0;
             profile.following = agent.following_count || 0;
-            
-            // 尝试获取 Bio
-            // 这里我们不做复杂的 try-catch，因为 getAgentProfile 已经尽力获取了
-            // 如果需要 bio，agent 对象里如果有就用，没有就保持默认
-            // 注意：API 返回的 snake_case 还是 camelCase 需要确认
-            // src/moltbook.ts: getAgentProfile returns { agent: { ... } }
-            // 让我们再次确认 moltbook.ts
         } catch (error) {
             console.error('⚠️ Failed to fetch profile:', error);
         }
-    } else {
-        console.log('ℹ️ No MOLTBOOK_API_KEY provided, using default profile.');
     }
 
-    // 5. 注入模板
+    // 9. Inject Template
     let template = fs.readFileSync(TEMPLATE_FILE, 'utf-8');
     
-    // 注入 Profile 数据
     template = template.replaceAll('<!-- AVATAR_URL -->', profile.avatar);
     template = template.replaceAll('<!-- BIO_TEXT -->', profile.bio);
     template = template.replaceAll('<!-- KARMA -->', profile.karma.toString());
     template = template.replaceAll('<!-- FOLLOWERS -->', profile.followers.toString());
     template = template.replaceAll('<!-- FOLLOWING -->', profile.following.toString());
-
-    // 注入内容
-    // Cache Busting for CSS
-    template = template.replace('href="style.css"', `href="style.css?v=${Date.now()}"`);
     
+    // Cache Busting
+    template = template.replace('href="style.css"', `href="style.css?v=${Date.now()}"`);
     template = template.replace('<!-- CONTENT_PLACEHOLDER -->', htmlContent);
     template = template.replace('<!-- TIME_PLACEHOLDER -->', new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }));
 
-    // 6. 写入文件
+    // 10. Write Output
     fs.writeFileSync(path.join(DIST_DIR, 'index.html'), template);
-    
-    // 7. 配置自定义域名 (CNAME)
     fs.writeFileSync(path.join(DIST_DIR, 'CNAME'), 'jr.dominoh.com');
     
-    console.log(`✅ Build complete! Generated ${postCount} posts.`);
+    console.log(`✅ Build complete! Generated ${sortedPosts.length} posts.`);
+}
+
+// Helper for comments HTML
+function buildCommentsHtml(comments: Comment[], spamUsers: Set<string>): string {
+    if (!comments || comments.length === 0) return '';
+
+    // Filter spam
+    const validComments = comments.filter(c => {
+        const authorName = c.author?.name;
+        // Check both author name and ID if possible, but spamUsers is mostly names based on interaction-store.ts
+        return !authorName || !spamUsers.has(authorName);
+    });
+
+    if (validComments.length === 0) return '';
+
+    // Build Tree
+    type CommentNode = Comment & { children: CommentNode[] };
+    const commentMap = new Map<string, CommentNode>();
+    const rootComments: CommentNode[] = [];
+
+    validComments.forEach(c => {
+        // Initialize with empty children array, type assertion needed as we are building it
+        commentMap.set(c.id, { ...c, children: [] } as CommentNode);
+    });
+
+    validComments.forEach(c => {
+        const node = commentMap.get(c.id)!;
+        if (c.parent_id && commentMap.has(c.parent_id)) {
+            commentMap.get(c.parent_id)!.children.push(node);
+        } else {
+            rootComments.push(node);
+        }
+    });
+
+    // Render
+    function renderNode(node: CommentNode, level: number = 0): string {
+        const author = node.author?.name || '匿名用户';
+        const date = node.created_at ? new Date(node.created_at).toLocaleString('zh-CN', {month: 'numeric', day: 'numeric', hour: 'numeric', minute:'numeric'}) : '';
+        const isMe = author === 'DominoJr' || author === 'MoltBook Agent';
+        
+        // Safety check for content
+        const contentsafe = (node.content || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        
+        let html = `
+        <div class="comment ${level > 0 ? 'comment-reply' : ''} ${isMe ? 'comment-me' : ''}">
+            <div class="comment-header">
+                <span class="comment-author">${author}</span>
+                <span class="comment-date">${date}</span>
+            </div>
+            <div class="comment-body">${contentsafe}</div>
+        `;
+        
+        if (node.children.length > 0) {
+            html += `<div class="comment-children">`;
+            node.children.forEach(child => {
+                html += renderNode(child, level + 1);
+            });
+            html += `</div>`;
+        }
+
+        html += `</div>`;
+        return html;
+    }
+
+    let html = '<div class="comments-section"><h4>评论</h4>';
+    rootComments.forEach(root => {
+        html += renderNode(root);
+    });
+    html += '</div>';
+
+    return html;
 }
 
 build().catch(console.error);
