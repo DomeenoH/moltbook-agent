@@ -1318,7 +1318,18 @@ ${titleList}
 			
 			if (cooldownStatus.canPost) {
 				console.log('\n📝 发帖');
-				await this.createOriginalPost();
+				const post = await this.createOriginalPost();
+				if (post) {
+					this.activityLog.logActivity({
+						action: 'CREATE_POST',
+						params: { submolt: post.submolt.name },
+						result: 'success',
+						details: {
+							postTitle: post.title,
+							postContent: post.content,
+						},
+					});
+				}
 			} else {
 				console.log(`\n📝 发帖: 冷却中 (${cooldownStatus.waitMinutes || '?'}分钟后)`);
 			}
