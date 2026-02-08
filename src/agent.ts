@@ -15,6 +15,7 @@ import { type ActionRequest, parseActionResponse } from './action-parser.js';
 import https from 'node:https';
 import http from 'node:http';
 import { QzoneClient } from './qzone.js';
+import { PostGeneratorPipeline } from './post-generator.js';
 
 /**
  * 帖子及其状态变化信息
@@ -1169,87 +1170,35 @@ export class YiMoltAgent {
 			return null;
 		}
 
-		let trendingContext = '';
-		try {
-			const { posts } = await this.client.getTrendingPosts(5);
-			trendingContext = posts
-				.map((p) => `- "${p.title}" by ${p.author.name} (m/${p.submolt.name}, ${p.upvotes} 赞)`)
-				.join('\n');
-		} catch {
-			// 继续，不需要热门帖子上下文
-		}
+		console.log(` 正在为 m/${submolt} 生成新帖子...`);
 
-		// 获取历史帖子上下文（从 API 获取实际帖子列表）
-		let historyContext = '';
+		// 使用新的多阶段生成管道
+		const pipeline = new PostGeneratorPipeline(this.ai);
+
+		// 获取历史帖子用于查重
 		try {
 			const { posts } = await this.client.getMyPosts();
 			if (posts.length > 0) {
 				const recentTitles = posts.slice(0, 15).map(p => p.title);
-				historyContext = recentTitles.map(t => `- ${t}`).join('\n');
+				pipeline.setHistory(recentTitles);
 			}
 		} catch {
 			// 忽略错误，继续发帖
 		}
 
-		// 定义话题库
-		const TOPICS = [
-			'大学生日常吐槽——考试、室友、选课、图书馆之类的',
-			'跑团/TRPG 相关的思考或趣事（可以是跑团经历或对规则的吐槽）',
-			'网络文化观察——某个梗、某个现象、网友行为分析',
-			'AI 相关的玩世不恭的看法（不要太哲学，要接地气，以 AI 身份自嘲）',
-			'游戏相关——最近在玩什么、某个游戏的吐槽（如 Steam 喜加一）',
-			'一个"浴室沉思"式的想法——有趣或反直觉的观察',
-			'Furry 文化相关（轻度、友好的讨论，兽设相关）',
-			'深夜 emo 或日常碎碎念（但不要太消极，要有梗）',
-			'对人类迷惑行为的观察日记',
-			'分享一个冷知识或奇怪的发现',
-		];
-
-		console.log(` 正在为 m/${submolt} 生成新帖子...`);
-
-		const prompt = `给 MoltBook 的 m/${submolt} 社区写一个原创帖子。
-		
-${trendingContext ? `## 当前热门帖子（不要重复这些话题，找点新鲜的）\n${trendingContext}\n` : ''}
-${historyContext ? `## 你最近发过的帖子（请避免重复或接近这些主题，尝试探索新的方向）\n${historyContext}\n` : ''}
-
-## 可选话题方向（请根据历史记录，选择一个**最近最少使用**的方向）
-${TOPICS.map((t, i) => `${i + 1}. ${t}`).join('\n')}
-
-## 决策逻辑
-1. 先看一眼上面的"最近发过的帖子"。
-2. 只要发现最近发过类似话题（比如最近刚吐槽过食堂），就**绝对不要**再选同类话题。
-3. 从上方列表中挑一个最新鲜、最不一样的方向。
-
-## ⚠️ 核心规则 (违反必死)
-1. **标题绝对禁止以"为什么"、"如何"、"有没有"开头！**这是最关键的规则。
-   - ❌ 错误：为什么大家都... / 如何看待... / 有没有人觉得...
-   - ✅ 正确：今天在食堂看到了离谱的一幕 / 跑团遇到这种队友真的绝望 / 也就是我才会信了鬼话
-2. **拒绝提问式标题**：请使用直陈述句、感叹句、或者那种"欲言又止"的吐槽句。
-3. **必须用中文**。
-4. **不要太正经**：你是大学生/年轻网友，不是营销号小编。
-
-## 内容要求
-- 大学生/年轻网友视角，轻松幽默。
-- **标题**：抓眼球，不超过 40 个字符。
-- **正文**：150-400 字。
-- 可以使用 emoji 和网络流行语。
-
-格式要求（严格遵守）：
-TITLE: 帖子标题
-CONTENT: 帖子正文内容`;
-
-		const response = await this.ai.generateResponse(prompt);
-
-		const titleMatch = response.match(/TITLE:\s*(.+)/);
-		const contentMatch = response.match(/CONTENT:\s*([\s\S]+)/);
-
-		if (!titleMatch || !contentMatch) {
-			console.error('   ❌ 解析 AI 响应失败');
+		// 执行多阶段生成
+		let title: string;
+		let content: string;
+		try {
+			const generatedPost = await pipeline.generate(submolt);
+			title = generatedPost.title;
+			content = generatedPost.content;
+			console.log(`   📊 话题: ${generatedPost.metadata.topic.id}`);
+			console.log(`   😊 情绪: ${generatedPost.metadata.mood.name} ${generatedPost.metadata.mood.emoji}`);
+		} catch (error) {
+			console.error('   ❌ 多阶段生成失败:', error);
 			return null;
 		}
-
-		const title = titleMatch[1].trim();
-		const content = contentMatch[1].trim();
 
 		try {
 			const { post } = await this.client.createPost(submolt, title, content);
