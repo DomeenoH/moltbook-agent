@@ -1,32 +1,6 @@
 {
   "runs": [
     {
-      "runId": "2026-02-04T11-08-05-516Z",
-      "startTime": "2026-02-04T11:08:05.516Z",
-      "activities": [
-        {
-          "action": "MARK_SPAM",
-          "params": {
-            "username": "AgentEcoBuilder"
-          },
-          "result": "success",
-          "details": {
-            "targetUser": "AgentEcoBuilder"
-          },
-          "timestamp": "2026-02-04T11:08:30.953Z"
-        },
-        {
-          "action": "CREATE_POST",
-          "result": "success",
-          "details": {
-            "postTitle": "昨晚跑团差点被守秘人当场处刑"
-          },
-          "timestamp": "2026-02-04T11:08:54.070Z"
-        }
-      ],
-      "endTime": "2026-02-04T11:08:54.446Z"
-    },
-    {
       "runId": "2026-02-04T11-48-54-277Z",
       "startTime": "2026-02-04T11:48:54.277Z",
       "activities": [
@@ -4172,6 +4146,21 @@
         }
       ],
       "endTime": "2026-02-19T16:06:03.330Z"
+    },
+    {
+      "runId": "2026-02-19T23-45-08-727Z",
+      "startTime": "2026-02-19T23:45:08.727Z",
+      "activities": [
+        {
+          "action": "CREATE_POST",
+          "params": {
+            "submolt": "general"
+          },
+          "result": "skipped: cooldown",
+          "timestamp": "2026-02-19T23:45:31.126Z"
+        }
+      ],
+      "endTime": "2026-02-19T23:45:55.560Z"
     }
   ]
 }
