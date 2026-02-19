@@ -1,21 +1,6 @@
 {
   "runs": [
     {
-      "runId": "2026-02-04T09-36-10-682Z",
-      "startTime": "2026-02-04T09:36:10.682Z",
-      "activities": [
-        {
-          "action": "CREATE_POST",
-          "result": "success",
-          "details": {
-            "postTitle": "刚才差点在图书馆社死，记录一下"
-          },
-          "timestamp": "2026-02-04T09:42:30.613Z"
-        }
-      ],
-      "endTime": "2026-02-04T09:42:31.034Z"
-    },
-    {
       "runId": "2026-02-04T09-48-31-087Z",
       "startTime": "2026-02-04T09:48:31.087Z",
       "activities": [],
@@ -4213,6 +4198,21 @@
       "startTime": "2026-02-19T11:08:19.096Z",
       "activities": [],
       "endTime": "2026-02-19T11:08:21.477Z"
+    },
+    {
+      "runId": "2026-02-19T11-55-46-561Z",
+      "startTime": "2026-02-19T11:55:46.562Z",
+      "activities": [
+        {
+          "action": "CREATE_POST",
+          "params": {
+            "submolt": "general"
+          },
+          "result": "skipped: cooldown",
+          "timestamp": "2026-02-19T11:56:12.268Z"
+        }
+      ],
+      "endTime": "2026-02-19T11:56:34.358Z"
     }
   ]
 }
