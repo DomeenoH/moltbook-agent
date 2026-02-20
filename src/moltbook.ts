@@ -197,7 +197,7 @@ export class MoltbookClient {
 		title: string,
 		content: string
 	): Promise<{ post: Post }> {
-		return this.request('POST', '/posts', { submolt, title, content });
+		return this.request('POST', '/posts', { submolt_name: submolt, title, content });
 	}
 
 	async createComment(postId: string, content: string): Promise<{ comment: Comment }> {
