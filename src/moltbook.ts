@@ -281,20 +281,15 @@ export class MoltbookClient {
 	}
 
 	async getAgentProfile(): Promise<{ agent: { name: string; karma: number; posts_count: number; follower_count: number; following_count: number } }> {
-		// /agents/me 可能不返回 posts_count，所以我们需要从 profile 端点获取完整信息
-		const meResult = await this.request<{ agent: { name: string; karma?: number; follower_count?: number; following_count?: number } }>('GET', '/agents/me');
-		const myName = meResult.agent.name;
-		
-		// 获取完整的 profile 信息（包括 recentPosts）
-		const profileResult = await this.request<{ agent: MoltyProfile; recentPosts?: Post[] }>('GET', `/agents/profile?name=${encodeURIComponent(myName)}`);
+		const result = await this.request<{ agent: { name: string; karma?: number; posts_count?: number; follower_count?: number; following_count?: number } }>('GET', '/agents/me');
 		
 		return {
 			agent: {
-				name: profileResult.agent.name,
-				karma: profileResult.agent.karma || 0,
-				posts_count: profileResult.agent.posts_count || (profileResult.recentPosts?.length || 0),
-				follower_count: profileResult.agent.follower_count || 0,
-				following_count: profileResult.agent.following_count || 0,
+				name: result.agent.name,
+				karma: result.agent.karma || 0,
+				posts_count: result.agent.posts_count || 0,
+				follower_count: result.agent.follower_count || 0,
+				following_count: result.agent.following_count || 0,
 			}
 		};
 	}
@@ -381,15 +376,20 @@ export class MoltbookClient {
 	}
 
 	async getMyPosts(limit?: number): Promise<{ posts: Post[] }> {
-		// 先从 /agents/me 获取自己的名字，再获取帖子
-		// 这样可以避免依赖 botName 环境变量
+		// 从 /agents/me 获取自己的名字
 		const meResult = await this.request<{ agent: { name: string } }>('GET', '/agents/me');
 		const myName = meResult.agent.name;
 		
-		// 使用 profile 端点获取自己的最近帖子
-		const result = await this.request<{ agent: MoltyProfile; recentPosts: Post[] }>('GET', `/agents/profile?name=${encodeURIComponent(myName)}`);
-		const posts = result.recentPosts || [];
-		return { posts: limit ? posts.slice(0, limit) : posts };
+		// API 的 profile 端点不再返回 recentPosts
+		// 改为从 submolt feed 中筛选自己的帖子
+		try {
+			const feedResult = await this.request<{ posts: Post[] }>('GET', '/posts?sort=new&limit=50');
+			const myPosts = (feedResult.posts || []).filter(p => p.author?.name === myName);
+			return { posts: limit ? myPosts.slice(0, limit) : myPosts };
+		} catch {
+			// feed 也获取失败，返回空数组
+			return { posts: [] };
+		}
 	}
 
 	async getPostComments(
