@@ -1145,7 +1145,12 @@ export class YiMoltAgent {
 			
 			const lastPostTime = new Date(posts[0].created_at).getTime();
 			const elapsed = Date.now() - lastPostTime;
-			const cooldownMs = 30 * 60 * 1000; // 30 分钟
+
+			// 使用随机冷却时间：基础 2 小时 + 随机 0~2 小时，总计 2~4 小时冷却
+			// 以毫秒为单位：2小时 = 7200000ms, 4小时 = 14400000ms
+			// 为了确保每次检查不过度跳动，我们可以根据最后一贴的 ID 进行伪随机，
+			// 或者简单点，我们这里统一取 3 小时的固定冷却
+			const cooldownMs = 3 * 60 * 60 * 1000; // 3 小时
 			
 			if (elapsed >= cooldownMs) {
 				return { canPost: true };

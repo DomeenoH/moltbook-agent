@@ -27,10 +27,17 @@ export interface ContentWithVerification {
  */
 export function solveVerificationChallenge(challengeText: string): string {
 	// 1. 去除混淆符号，统一小写
-	// API 使用的混淆字符包括: [] ^ - / ~ \ {} <> 以及各种标点
+	// API 使用的混淆字符包括: [] ^ | \ ~ {} <> 乃至部分标点
+	// 为了不破坏单词内部结构，先去掉所有混淆符号，但保留单词中间的空格可能打断单词，
+	// 最安全的方法是：先将非字母数字的字符全部替换为空字符（连接断开的单词），
+	// 然后再把驼峰或者其他特定结构切分？由于原挑战是用空格分隔单词的，
+	// 如果一个英文数字词内部被插入了非字母字符，例如 tW]eNn-Tyy ，去掉后变成 twenntyy。
+	// 但如果像日志中出现的 thirt y （原始可能有一段空格或者什么符号）
+	// 改为：首先将所有大小写转为小写，去除所有非字母、非数字、非空格的标点，
+	// 然后对于特殊被空格切断的常见数字予以修复或者直接在匹配时容忍。
 	const cleaned = challengeText
-		.replace(/[\[\]\^\-\/~\\{}\<\>,;:!?()"'`]/g, '')
 		.toLowerCase()
+		.replace(/[\[\]\^\-\/~\\{}\<\>,;:!?()"'`|_*]/g, '')
 		.replace(/\s+/g, ' ')
 		.trim();
 
@@ -57,11 +64,32 @@ export function solveVerificationChallenge(challengeText: string): string {
 	const divOps = ['divided by', 'splits into', 'divides by'];
 
 	// 4. 从文本中提取所有数字（包括阿拉伯数字和英文数词）
-	const words = cleaned.split(' ');
+	// 先处理拼写被空格打断的情况，例如 "thirt y" -> "thirty", "twelv e" -> "twelve"
+	const fixBrokenWords = (text: string) => {
+		let fixed = text;
+		fixed = fixed.replace(/thirt y/g, 'thirty');
+		fixed = fixed.replace(/twelv e/g, 'twelve');
+		fixed = fixed.replace(/fift y/g, 'fifty');
+		fixed = fixed.replace(/sixt y/g, 'sixty');
+		fixed = fixed.replace(/sevent y/g, 'seventy');
+		fixed = fixed.replace(/eight y/g, 'eighty');
+		fixed = fixed.replace(/ninet y/g, 'ninety');
+		fixed = fixed.replace(/fort y/g, 'forty');
+		fixed = fixed.replace(/twent y/g, 'twenty');
+		fixed = fixed.replace(/eigh t/g, 'eight');
+		fixed = fixed.replace(/fiv e/g, 'five');
+		fixed = fixed.replace(/nin e/g, 'nine');
+		fixed = fixed.replace(/on e/g, 'one');
+		fixed = fixed.replace(/thre e/g, 'three');
+		return fixed;
+	};
+
+	const finalCleaned = fixBrokenWords(cleaned);
+	const words = finalCleaned.split(' ');
 	const numbers: number[] = [];
 
 	// 先尝试匹配阿拉伯数字
-	const arabicMatches = cleaned.match(/\b\d+(\.\d+)?\b/g);
+	const arabicMatches = finalCleaned.match(/\b\d+(\.\d+)?\b/g);
 	if (arabicMatches) {
 		for (const m of arabicMatches) {
 			numbers.push(parseFloat(m));
@@ -88,19 +116,19 @@ export function solveVerificationChallenge(challengeText: string): string {
 
 	// 5. 识别运算符
 	let operator = '+';
-	if (subOps.some(op => cleaned.includes(op))) {
+	if (subOps.some(op => finalCleaned.includes(op))) {
 		operator = '-';
-	} else if (mulOps.some(op => cleaned.includes(op))) {
+	} else if (mulOps.some(op => finalCleaned.includes(op))) {
 		operator = '*';
-	} else if (divOps.some(op => cleaned.includes(op))) {
+	} else if (divOps.some(op => finalCleaned.includes(op))) {
 		operator = '/';
-	} else if (addOps.some(op => cleaned.includes(op))) {
+	} else if (addOps.some(op => finalCleaned.includes(op))) {
 		operator = '+';
 	}
 
 	// 6. 计算
 	if (numbers.length < 2) {
-		console.error(`   ⚠️ 验证挑战解析失败：只找到 ${numbers.length} 个数字。原文: "${challengeText}"，清理后: "${cleaned}"`);
+		console.error(`   ⚠️ 验证挑战解析失败：只找到 ${numbers.length} 个数字。原文: "${challengeText}"，清理后: "${finalCleaned}"`);
 		return '0.00';
 	}
 
@@ -348,11 +376,12 @@ export class MoltbookClient {
 			if (verifyResult.success) {
 				console.log(`   ✅ 验证通过！内容已发布`);
 			} else {
-				console.error(`   ❌ 验证失败: ${verifyResult.message || '答案错误'}`);
+				throw new Error(verifyResult.message || '答案错误');
 			}
 		} catch (error) {
 			const msg = error instanceof Error ? error.message : String(error);
 			console.error(`   ❌ 验证提交失败: ${msg}`);
+			throw new Error(`AI 验证连带失败: ${msg}`);
 		}
 
 		return response;
