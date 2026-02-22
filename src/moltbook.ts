@@ -381,18 +381,16 @@ export class MoltbookClient {
 	}
 
 	async getMyPosts(limit?: number): Promise<{ posts: Post[] }> {
-		// 从 /agents/me 获取自己的名字
-		const meResult = await this.request<{ agent: { name: string } }>('GET', '/agents/me');
-		const myName = meResult.agent.name;
-		
-		// API 的 profile 端点不再返回 recentPosts
-		// 改为从 submolt feed 中筛选自己的帖子
+		// 直接使用 ?author= 查询参数获取自己的帖子
+		// 避免从全局 feed 筛选（帖子量大时会被淹没）
+		const queryLimit = limit || 50;
 		try {
-			const feedResult = await this.request<{ posts: Post[] }>('GET', '/posts?sort=new&limit=50');
-			const myPosts = (feedResult.posts || []).filter(p => p.author?.name === myName);
-			return { posts: limit ? myPosts.slice(0, limit) : myPosts };
+			const result = await this.request<{ posts: Post[] }>(
+				'GET',
+				`/posts?author=${encodeURIComponent(this.botName)}&sort=new&limit=${queryLimit}`
+			);
+			return { posts: result.posts || [] };
 		} catch {
-			// feed 也获取失败，返回空数组
 			return { posts: [] };
 		}
 	}
