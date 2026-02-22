@@ -583,21 +583,20 @@ export class YiMoltAgent {
 		}
 
 
-		// 循环结束后，更新所有帖子的快照（静默执行）
+		// 循环结束后，强制更新所有近期帖子的快照（静默执行）
+		// 关键修复：由于 AI 可能会因为列表过长、或者过滤出 Spam 后直接退出
+		// 导致 viewedPostIds 中没有记录这些老帖，从而永远保留 `hasNewComments` 状态（僵尸新评论 Bug）
+		// 现在的逻辑：无论 AI 本轮是否查看，只要出现在 recentPosts 里，都将其当前状态作为最新快照。
+		// 这样被忽略的评论、Spam 评论都将在下一次检查时被认为已处理。
 		for (const postWithStatus of context.recentPosts) {
 			const post = postWithStatus.post;
-			
-			// 关键修复：只有当帖子被查看过（viewedPostIds），或者它本身就没有新评论时，才更新 snapshot
-			// 否则保留旧的 snapshot，确保下次运行时还能识别出新评论
-			if (viewedPostIds.has(post.id) || !postWithStatus.hasNewComments) {
-				this.interactionStore.updatePostSnapshot({
-					postId: post.id,
-					commentCount: post.comment_count,
-					upvotes: post.upvotes,
-					downvotes: post.downvotes,
-					lastChecked: new Date().toISOString(),
-				});
-			}
+			this.interactionStore.updatePostSnapshot({
+				postId: post.id,
+				commentCount: post.comment_count,
+				upvotes: post.upvotes,
+				downvotes: post.downvotes,
+				lastChecked: new Date().toISOString(),
+			});
 		}
 
 		console.log(`   ✅ 社交互动环节完成，执行了 ${actionHistory.length} 个动作`);
