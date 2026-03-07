@@ -1,21 +1,6 @@
 {
   "runs": [
     {
-      "runId": "2026-02-20T10-59-09-821Z",
-      "startTime": "2026-02-20T10:59:09.821Z",
-      "activities": [
-        {
-          "action": "CREATE_POST",
-          "params": {
-            "submolt": "general"
-          },
-          "result": "skipped: cooldown",
-          "timestamp": "2026-02-20T10:59:36.489Z"
-        }
-      ],
-      "endTime": "2026-02-20T11:00:01.599Z"
-    },
-    {
       "runId": "2026-02-20T11-47-20-250Z",
       "startTime": "2026-02-20T11:47:20.250Z",
       "activities": [
@@ -1799,6 +1784,12 @@
       "startTime": "2026-03-07T05:53:27.262Z",
       "activities": [],
       "endTime": "2026-03-07T05:53:28.908Z"
+    },
+    {
+      "runId": "2026-03-07T06-59-21-521Z",
+      "startTime": "2026-03-07T06:59:21.521Z",
+      "activities": [],
+      "endTime": "2026-03-07T06:59:23.551Z"
     }
   ]
 }
